@@ -4,18 +4,27 @@ import { SESSION_FULL_AT_SECONDS } from "@/utils/pricing";
 
 interface SessionContextValue {
   active: boolean;
+  // Whether the ActiveSession screen is the one currently on top, vs the
+  // session running minimized behind the tab bar (see the "Live session in
+  // progress" banner in RootNavigator). Distinct from `active`, which just
+  // means a session exists at all — mirrors sessionActive/sessionVisible
+  // in the web prototype.
+  visible: boolean;
   charger: Charger | null;
   kwh: number;
   seconds: number;
   start: (charger: Charger) => void;
   end: () => void;
   stopTicking: () => void;
+  show: () => void;
+  hide: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [charger, setCharger] = useState<Charger | null>(null);
   const [kwh, setKwh] = useState(0);
   const [seconds, setSeconds] = useState(0);
@@ -42,6 +51,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const start = (c: Charger) => {
     setCharger(c);
     setActive(true);
+    setVisible(true);
     setKwh(0);
     setSeconds(0);
   };
@@ -53,13 +63,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const end = () => {
     stopTicking();
     setActive(false);
+    setVisible(false);
     setCharger(null);
     setKwh(0);
     setSeconds(0);
   };
 
+  const show = () => setVisible(true);
+  const hide = () => setVisible(false);
+
   return (
-    <SessionContext.Provider value={{ active, charger, kwh, seconds, start, end, stopTicking }}>{children}</SessionContext.Provider>
+    <SessionContext.Provider value={{ active, visible, charger, kwh, seconds, start, end, stopTicking, show, hide }}>
+      {children}
+    </SessionContext.Provider>
   );
 }
 

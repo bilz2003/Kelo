@@ -24,6 +24,16 @@ export const isSameDate = (a: Date, b: Date) =>
 
 export const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 export const monthLabel = (d: Date) => `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+export const dayLabel = (d: Date) => `${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
+
+/** "4 Aug 2026" for a single day, "4–9 Aug 2026" within a month, "28 Jul – 4 Aug, 2026" across months. */
+export const formatRangeLabel = (start: Date, end: Date): string => {
+  if (isSameDate(start, end)) return `${dayLabel(start)} ${start.getFullYear()}`;
+  if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+    return `${start.getDate()}–${end.getDate()} ${MONTH_NAMES[start.getMonth()]} ${start.getFullYear()}`;
+  }
+  return `${dayLabel(start)} – ${dayLabel(end)}, ${end.getFullYear()}`;
+};
 
 /**
  * Earliest a driver can select for arrival — rounds up to the next full

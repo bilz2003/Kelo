@@ -3,6 +3,7 @@ import { View, Text, FlatList } from "react-native";
 import { Clock } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
+import { TimeFilterButton } from "@/components/TimeFilterButton";
 import { BOOKINGS } from "@/data/mockBookings";
 import { Booking, TimeRangeValue } from "@/types";
 import { defaultTimeRange } from "@/utils/dateTime";
@@ -17,10 +18,7 @@ const statusColor = (tokens: ReturnType<typeof useTheme>["tokens"], s: Booking["
 
 export function BookingsScreen() {
   const { tokens } = useTheme();
-  const [range] = useState<TimeRangeValue>(defaultTimeRange());
-  // Follow-up: port the full TimeFilterButton (Month list / Custom range
-  // calendar, same component used in My Chargers) here to make `range`
-  // actually adjustable — kept fixed to the current month for this pass.
+  const [range, setRange] = useState<TimeRangeValue>(defaultTimeRange());
 
   const visible = BOOKINGS.filter((b) => {
     const d = parseISODate(b.dateISO);
@@ -30,7 +28,8 @@ export function BookingsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink, paddingTop: 54 }}>
       <View style={{ paddingHorizontal: 20, paddingBottom: 14 }}>
-        <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 24, color: tokens.text, letterSpacing: -0.3 }}>Bookings</Text>
+        <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 24, color: tokens.text, letterSpacing: -0.3, marginBottom: 14 }}>Bookings</Text>
+        <TimeFilterButton value={range} onChange={setRange} />
       </View>
       <FlatList
         data={visible}

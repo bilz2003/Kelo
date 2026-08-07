@@ -2,7 +2,7 @@ import React, { createContext, useContext, useMemo, useState } from "react";
 import { Charger, ListingNameMap } from "@/types";
 import { CHARGERS, defaultListingName } from "@/data/mockChargers";
 
-const namesMatch = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+export const namesMatch = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 interface ChargerStoreValue {
   chargers: Charger[]; // all visible chargers (Discover), with overrides applied

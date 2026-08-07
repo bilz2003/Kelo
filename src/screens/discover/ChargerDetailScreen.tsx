@@ -1,6 +1,7 @@
-import React from "react";
-import { View, Text, ScrollView, Image, Pressable } from "react-native";
-import { Star, ShieldCheck, ImageOff } from "lucide-react-native";
+import React, { useRef, useState } from "react";
+import { View, Text, ScrollView, Image, Pressable, Animated, Modal } from "react-native";
+import { PinchGestureHandler, PinchGestureHandlerGestureEvent, State, PinchGestureHandlerStateChangeEvent } from "react-native-gesture-handler";
+import { Star, ShieldCheck, ImageOff, X, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -11,6 +12,76 @@ import { DiscoverStackParamList } from "@/navigation/types";
 
 type Props = NativeStackScreenProps<DiscoverStackParamList, "ChargerDetail">;
 
+const REVIEWS = [
+  { name: "Ravi", text: "Driveway was exactly as described, easy in and out. Cost matched the app to the penny.", stars: 5 },
+  { name: "Emma", text: "James replied fast and the charger worked first time. Would book again.", stars: 5 },
+];
+
+/** Full-screen photo viewer — swipe between photos, pinch to zoom and spring back on release, matching the web prototype's Instagram-style peek. */
+function PhotoViewer({ photos, index, onChangeIndex, onClose }: { photos: string[]; index: number; onChangeIndex: (i: number) => void; onClose: () => void }) {
+  const { tokens } = useTheme();
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const onPinchEvent = Animated.event([{ nativeEvent: { scale } }], { useNativeDriver: true });
+  const onPinchStateChange = (e: PinchGestureHandlerStateChangeEvent) => {
+    if (e.nativeEvent.oldState === State.ACTIVE) {
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 6 }).start();
+    }
+  };
+
+  const go = (delta: number) => onChangeIndex((index + delta + photos.length) % photos.length);
+
+  return (
+    <Modal visible transparent={false} animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: tokens.ink }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 54, paddingHorizontal: 20, paddingBottom: 8 }}>
+          <Pressable onPress={onClose} style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, alignItems: "center", justifyContent: "center" }}>
+            <X size={16} color={tokens.text} />
+          </Pressable>
+          {photos.length > 1 && (
+            <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft }}>{index + 1} / {photos.length}</Text>
+          )}
+          <View style={{ width: 34 }} />
+        </View>
+
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 }}>
+          {photos.length > 1 && (
+            <Pressable
+              onPress={() => go(-1)}
+              style={{ position: "absolute", left: 8, zIndex: 1, backgroundColor: "rgba(26,32,41,0.75)", borderWidth: 1, borderColor: tokens.hair, borderRadius: 16, width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
+            >
+              <ChevronLeft size={16} color={tokens.text} />
+            </Pressable>
+          )}
+          <PinchGestureHandler onGestureEvent={onPinchEvent} onHandlerStateChange={onPinchStateChange}>
+            <Animated.Image
+              source={{ uri: photos[index] }}
+              resizeMode="contain"
+              style={{ width: "100%", height: "100%", borderRadius: radii.xl, borderWidth: 1, borderColor: tokens.hair, transform: [{ scale }] }}
+            />
+          </PinchGestureHandler>
+          {photos.length > 1 && (
+            <Pressable
+              onPress={() => go(1)}
+              style={{ position: "absolute", right: 8, zIndex: 1, backgroundColor: "rgba(26,32,41,0.75)", borderWidth: 1, borderColor: tokens.hair, borderRadius: 16, width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
+            >
+              <ChevronRight size={16} color={tokens.text} />
+            </Pressable>
+          )}
+        </View>
+
+        {photos.length > 1 && (
+          <View style={{ flexDirection: "row", justifyContent: "center", gap: 6, paddingVertical: 20, paddingBottom: 34 }}>
+            {photos.map((_, i) => (
+              <View key={i} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: i === index ? tokens.cyan : tokens.hair }} />
+            ))}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 export function ChargerDetailScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { chargers, nameFor } = useChargerStore();
@@ -19,6 +90,7 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
   // screen was first opened are reflected immediately.
   const charger = chargers.find((c) => c.id === routeCharger.id) ?? routeCharger;
   const photos = charger.photos ?? [];
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const infoRows: [string, string][] = [
     ["Connector", charger.connector],
@@ -65,7 +137,9 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
         {photos.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 10 }}>
             {photos.map((uri, i) => (
-              <Image key={i} source={{ uri }} style={{ width: 210, height: 148, borderRadius: radii.lg, borderWidth: 1, borderColor: tokens.hair }} />
+              <Pressable key={i} onPress={() => setViewerIndex(i)}>
+                <Image source={{ uri }} style={{ width: 210, height: 148, borderRadius: radii.lg, borderWidth: 1, borderColor: tokens.hair }} />
+              </Pressable>
             ))}
           </ScrollView>
         ) : (
@@ -102,6 +176,21 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
             </View>
           ))}
         </View>
+
+        <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>Reviews</Text>
+        {REVIEWS.map((r) => (
+          <View key={r.name} style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 14, marginBottom: 10 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.text }}>{r.name}</Text>
+              <View style={{ flexDirection: "row", gap: 2 }}>
+                {Array.from({ length: r.stars }).map((_, i) => (
+                  <Star key={i} size={11} color={tokens.cyan} fill={tokens.cyan} />
+                ))}
+              </View>
+            </View>
+            <Text style={{ fontSize: 12.5, color: tokens.textSoft, lineHeight: 18 }}>{r.text}</Text>
+          </View>
+        ))}
       </ScrollView>
 
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: tokens.ink, borderTopWidth: 1, borderTopColor: tokens.hair, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28, flexDirection: "row", alignItems: "center", gap: 14 }}>
@@ -113,6 +202,10 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
           <PrimaryButton onPress={() => navigation.navigate("BookingFlow", { charger })}>Book this charger</PrimaryButton>
         </View>
       </View>
+
+      {viewerIndex !== null && (
+        <PhotoViewer photos={photos} index={viewerIndex} onChangeIndex={setViewerIndex} onClose={() => setViewerIndex(null)} />
+      )}
     </View>
   );
 }

@@ -1,4 +1,5 @@
 import { Booking } from "@/types";
+import { monthKey, startOfMonth } from "@/utils/dateTime";
 
 export const BOOKINGS: Booking[] = [
   { id: 1, title: "Wallbox Pulsar Plus", host: "Priya · SM5", date: "Tomorrow, 9:00am", status: "Upcoming", cost: null, dateISO: "2026-08-03" },
@@ -30,3 +31,21 @@ export const MONTHLY_STATS: Record<string, { sessions: number; kwh: number; earn
   "2026-07": { sessions: 16, kwh: 103.7, earned: 31.2 },
   "2026-08": { sessions: 14, kwh: 96.2, earned: 29.1 },
 };
+
+/** Sums whichever months a selected month/range/all-time selection touches. */
+export function statsForRange(start: Date, end: Date) {
+  const startKey = monthKey(startOfMonth(start));
+  const endKey = monthKey(startOfMonth(end));
+  let sessions = 0;
+  let kwh = 0;
+  let earned = 0;
+  Object.keys(MONTHLY_STATS).forEach((key) => {
+    if (key >= startKey && key <= endKey) {
+      const s = MONTHLY_STATS[key];
+      sessions += s.sessions;
+      kwh += s.kwh;
+      earned += s.earned;
+    }
+  });
+  return { sessions, kwh: +kwh.toFixed(1), earned: +earned.toFixed(2) };
+}

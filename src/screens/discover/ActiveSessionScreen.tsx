@@ -38,7 +38,10 @@ export function ActiveSessionScreen({ navigation }: Props) {
     setEnding(true);
   };
 
-  const handleMinimize = () => navigation.goBack();
+  const handleMinimize = () => {
+    session.hide();
+    navigation.goBack();
+  };
 
   const handleDone = () => {
     session.end();
@@ -89,16 +92,17 @@ export function ActiveSessionScreen({ navigation }: Props) {
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 54, paddingHorizontal: 20 }}>
-        <PulseDot />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>Live session</Text>
-        </View>
         <Pressable
           onPress={handleMinimize}
           style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.cyanTint30, alignItems: "center", justifyContent: "center" }}
         >
-          <ChevronDown size={17} color={tokens.cyan} />
+          <ChevronDown size={17} color={tokens.cyan} strokeWidth={2.3} />
         </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <PulseDot size={5} />
+          <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>Live session</Text>
+        </View>
+        <View style={{ width: 36 }} />
       </View>
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>

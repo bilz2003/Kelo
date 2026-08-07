@@ -4,6 +4,7 @@
     "slug": "kelo",
     "scheme": "kelo",
     "version": "0.1.0",
+    "newArchEnabled": true,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#12161C",
@@ -16,6 +17,14 @@
       "adaptiveIcon": {
         "backgroundColor": "#12161C"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Kelo uses your photos to let you add pictures of your charger listing."
+        }
+      ]
+    ]
   }
 }

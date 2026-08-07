@@ -1,5 +1,7 @@
+import "react-native-gesture-handler";
 import React, { useCallback, useState } from "react";
 import { View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreenNative from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useFonts as useSpaceGrotesk, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
@@ -40,14 +42,16 @@ export default function App() {
   if (!fontsReady) return null;
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <ThemeProvider>
-        <ChargerStoreProvider>
-          <SessionProvider>
-            <AppShell />
-          </SessionProvider>
-        </ChargerStoreProvider>
-      </ThemeProvider>
-    </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+        <ThemeProvider>
+          <ChargerStoreProvider>
+            <SessionProvider>
+              <AppShell />
+            </SessionProvider>
+          </ChargerStoreProvider>
+        </ThemeProvider>
+      </View>
+    </GestureHandlerRootView>
   );
 }
