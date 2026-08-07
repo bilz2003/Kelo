@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Kelo",
+    "slug": "kelo",
+    "scheme": "kelo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#12161C",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kelo.app"
+    },
+    "android": {
+      "package": "com.kelo.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#12161C"
+      }
+    }
+  }
+}
