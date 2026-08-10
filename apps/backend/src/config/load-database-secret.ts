@@ -34,5 +34,16 @@ export async function loadDatabaseUrlFromSecretsManager(): Promise<void> {
 
   const secret: RdsGeneratedSecret = JSON.parse(response.SecretString);
   const encodedPassword = encodeURIComponent(secret.password);
-  process.env.DATABASE_URL = `postgresql://${secret.username}:${encodedPassword}@${secret.host}:${secret.port}/${secret.dbname}`;
+
+  // apps/backend runs outside the VPC (see DATABASE.md) — the real RDS
+  // hostname is unreachable from here even with the SSM tunnel open, since
+  // the tunnel maps a *local* port to the DB, not the DB's own port
+  // directly. DATABASE_TUNNEL_LOCAL_PORT lets local dev route through that
+  // tunnel; once the backend actually runs inside/adjacent to the VPC,
+  // leaving it unset falls back to the real host, which is correct there.
+  const tunnelLocalPort = process.env.DATABASE_TUNNEL_LOCAL_PORT;
+  const host = tunnelLocalPort ? "localhost" : secret.host;
+  const port = tunnelLocalPort ? Number(tunnelLocalPort) : secret.port;
+
+  process.env.DATABASE_URL = `postgresql://${secret.username}:${encodedPassword}@${host}:${port}/${secret.dbname}`;
 }
