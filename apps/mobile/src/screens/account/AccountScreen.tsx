@@ -5,6 +5,14 @@ import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { Toggle } from "@/components/Controls";
 import { GhostButton } from "@/components/Button";
+import { useAuth } from "@/state/AuthContext";
+
+function initialsFrom(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
 
 const MENU = [
   { icon: CreditCard, label: "Payment methods" },
@@ -16,6 +24,8 @@ const MENU = [
 
 export function AccountScreen() {
   const { tokens, mode, toggleMode } = useTheme();
+  const { user, logout } = useAuth();
+  const displayName = user?.name ?? "";
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink, paddingTop: 54 }}>
@@ -25,11 +35,11 @@ export function AccountScreen() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 18 }}>
           <View style={{ width: 56, height: 56, borderRadius: 14, backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 18, color: tokens.cyan }}>SC</Text>
+            <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 18, color: tokens.cyan }}>{initialsFrom(displayName)}</Text>
           </View>
           <View>
-            <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 17, color: tokens.text, marginBottom: 4 }}>Sam Carter</Text>
-            <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft }}>Host & Driver — one profile</Text>
+            <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 17, color: tokens.text, marginBottom: 4 }}>{displayName}</Text>
+            <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft }}>{user?.email ?? "Host & Driver — one profile"}</Text>
           </View>
         </View>
 
@@ -61,7 +71,7 @@ export function AccountScreen() {
           ))}
         </View>
 
-        <GhostButton onPress={() => {}} tone="danger">
+        <GhostButton onPress={logout} tone="danger">
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <LogOut size={14} color={tokens.danger} />
             <Text style={{ color: tokens.danger, fontFamily: fonts.bodyMedium, fontSize: 14 }}>Log out</Text>

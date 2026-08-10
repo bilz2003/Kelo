@@ -11,19 +11,30 @@ import { useFonts as useIBMPlexMono, IBMPlexMono_400Regular, IBMPlexMono_500Medi
 import { ThemeProvider, useTheme } from "@/theme/ThemeContext";
 import { ChargerStoreProvider } from "@/state/ChargerStoreContext";
 import { SessionProvider } from "@/state/SessionContext";
+import { AuthProvider, useAuth } from "@/state/AuthContext";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { SplashScreen } from "@/screens/SplashScreen";
+import { AuthFlow } from "@/screens/auth/AuthFlow";
 
 SplashScreenNative.preventAutoHideAsync().catch(() => {});
 
 function AppShell() {
   const { tokens, mode } = useTheme();
+  const { status } = useAuth();
   const [booted, setBooted] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink }}>
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
-      {booted ? <RootNavigator /> : <SplashScreen onDone={() => setBooted(true)} />}
+      {!booted ? (
+        <SplashScreen onDone={() => setBooted(true)} />
+      ) : status === "loading" ? (
+        <View style={{ flex: 1, backgroundColor: tokens.ink }} />
+      ) : status === "authenticated" ? (
+        <RootNavigator />
+      ) : (
+        <AuthFlow />
+      )}
     </View>
   );
 }
@@ -47,7 +58,9 @@ export default function App() {
         <ThemeProvider>
           <ChargerStoreProvider>
             <SessionProvider>
-              <AppShell />
+              <AuthProvider>
+                <AppShell />
+              </AuthProvider>
             </SessionProvider>
           </ChargerStoreProvider>
         </ThemeProvider>
