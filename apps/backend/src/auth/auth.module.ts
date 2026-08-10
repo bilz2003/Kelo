@@ -14,7 +14,11 @@ import { JwtStrategy } from "./jwt.strategy";
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.getOrThrow<string>("JWT_SECRET"),
-        signOptions: { expiresIn: "7d" },
+        // Kept in sync with ACCESS_TOKEN_TTL in auth.service.ts, which
+        // passes this explicitly on every signAsync call — refresh tokens
+        // (see RefreshToken model) are what makes a 15-minute access token
+        // tolerable rather than annoying.
+        signOptions: { expiresIn: "15m" },
       }),
     }),
   ],
