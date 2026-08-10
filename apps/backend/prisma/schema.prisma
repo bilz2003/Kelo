@@ -1,0 +1,134 @@
+// Kelo backend data model — BACKEND-PLAN.md §2.
+// Field names for concepts that also exist in @kelo/core's Charger type
+// (rate, overstayRate, idleRate, noShowFee, postcode, fullAddress, cable,
+// title, connector) deliberately match it, so the schema mirrors what the
+// app already expects rather than inventing a parallel naming scheme.
+//
+// Not a 1:1 copy of that type, though — see DATABASE.md / the backend
+// README note on why @kelo/core's Charger stays a separate, hand-written
+// app-facing view model rather than being replaced by these generated types.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CableType {
+  TETHERED
+  BRING_YOUR_OWN
+}
+
+enum ConnectionRoute {
+  OCPP
+  ENODE
+}
+
+enum BookingStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum SessionEndedReason {
+  DRIVER_ENDED
+  RELEASED_EARLY
+  SYSTEM_TIMEOUT
+}
+
+enum TransactionType {
+  ENERGY
+  IDLE_OCCUPANCY
+  OVERSTAY
+  SERVICE_CHARGE
+  NO_SHOW_FEE
+}
+
+model User {
+  id                     Int      @id @default(autoincrement())
+  email                  String   @unique
+  passwordHash           String
+  name                   String
+  phone                  String?
+  stripeCustomerId       String?
+  stripeConnectAccountId String?
+  createdAt              DateTime @default(now())
+
+  chargers Charger[]
+  bookings Booking[]
+}
+
+model Charger {
+  id                Int             @id @default(autoincrement())
+  ownerId           Int
+  owner             User            @relation(fields: [ownerId], references: [id])
+  postcode          String
+  fullAddress       String? // private until a booking is paid
+  title             String
+  listingName       String? // nullable, falls back to "{host}'s driveway"
+  powerKw           Float
+  cable             CableType
+  connector         String
+  rate              Float // £/kWh, public
+  overstayRate      Float // £/min
+  idleRate          Float // £/min
+  noShowFee         Float // £ flat
+  hostCost          Float? // private — host's own £/kWh cost
+  connectionRoute   ConnectionRoute
+  ocppChargePointId String? // set if connectionRoute = OCPP
+  enodeVehicleId    String? // set if connectionRoute = ENODE
+  available         Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  removedAt         DateTime? // soft delete
+
+  bookings Booking[]
+}
+
+model Booking {
+  id                Int           @id @default(autoincrement())
+  driverId          Int
+  driver            User          @relation(fields: [driverId], references: [id])
+  chargerId         Int
+  charger           Charger       @relation(fields: [chargerId], references: [id])
+  arrivalAt         DateTime
+  endAt             DateTime
+  status            BookingStatus @default(UPCOMING)
+  serviceChargePaid Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+
+  session      Session?
+  transactions Transaction[]
+}
+
+model Session {
+  id            Int                 @id @default(autoincrement())
+  bookingId     Int                 @unique
+  booking       Booking             @relation(fields: [bookingId], references: [id])
+  startedAt     DateTime
+  endedAt       DateTime?
+  meterStartKwh Float
+  meterEndKwh   Float?
+  idleStartedAt DateTime?
+  energyCost    Float?
+  idleCost      Float?
+  overstayCost  Float?
+  endedReason   SessionEndedReason?
+}
+
+model Transaction {
+  id                    Int             @id @default(autoincrement())
+  bookingId             Int
+  booking               Booking         @relation(fields: [bookingId], references: [id])
+  type                  TransactionType
+  grossAmount           Float
+  commissionAmount      Float
+  hostNetAmount         Float
+  stripePaymentIntentId String?
+  stripeTransferId      String?
+  createdAt             DateTime        @default(now())
+}
