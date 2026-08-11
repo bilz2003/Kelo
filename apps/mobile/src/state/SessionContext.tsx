@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Socket } from "socket.io-client";
 import { Charger } from "@kelo/core";
-import { startSession, endSession, getActiveSession, connectSessionSocket, EndSessionResponse } from "@/api/sessions";
+import { startSession, simulateUnplug, getActiveSession, connectSessionSocket, SessionEndedEvent } from "@/api/sessions";
 
 interface SessionContextValue {
   active: boolean;
@@ -14,8 +14,19 @@ interface SessionContextValue {
   charger: Charger | null;
   kwh: number;
   seconds: number;
+  // The receipt from the most recent session:ended event — the ONLY thing
+  // that drives the receipt view. There is no client-triggered "end" call
+  // that resolves with a result; ending only ever happens because this
+  // event arrived (see simulateUnplug below).
+  lastReceipt: SessionEndedEvent | null;
   start: (charger: Charger, bookingId: number) => Promise<void>;
-  end: () => Promise<EndSessionResponse>;
+  // Mock-only test trigger, standing in for a real hardware unplug signal.
+  // Fire-and-forget: it doesn't return the receipt, doesn't touch local
+  // state — the session:ended event handler (wired in connect()) is what
+  // actually updates active/lastReceipt, exactly as it would for a real
+  // unplug the app didn't itself request.
+  simulateUnplug: () => Promise<void>;
+  clearReceipt: () => void;
   show: () => void;
   hide: () => void;
 }
@@ -28,22 +39,42 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [charger, setCharger] = useState<Charger | null>(null);
   const [kwh, setKwh] = useState(0);
   const [seconds, setSeconds] = useState(0);
+  const [lastReceipt, setLastReceipt] = useState<SessionEndedEvent | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<number | null>(null);
-
-  const connect = (sessionId: number) => {
-    socketRef.current?.disconnect();
-    sessionIdRef.current = sessionId;
-    socketRef.current = connectSessionSocket(sessionId, (tick) => {
-      setKwh(tick.kwh);
-      setSeconds(tick.seconds);
-    });
-  };
 
   const disconnect = () => {
     socketRef.current?.disconnect();
     socketRef.current = null;
     sessionIdRef.current = null;
+  };
+
+  // The only place a session ever transitions to "ended" — driven purely
+  // by the event arriving over the socket, never by a local button-tap
+  // resolving a promise. Same handler whether the app requested the mock
+  // unplug itself, another connection (e.g. a host session) did, or a real
+  // hardware signal eventually does.
+  const handleEnded = (event: SessionEndedEvent) => {
+    setLastReceipt(event);
+    setActive(false);
+    setVisible(false);
+    setCharger(null);
+    setKwh(0);
+    setSeconds(0);
+    disconnect();
+  };
+
+  const connect = (sessionId: number) => {
+    socketRef.current?.disconnect();
+    sessionIdRef.current = sessionId;
+    socketRef.current = connectSessionSocket(
+      sessionId,
+      (tick) => {
+        setKwh(tick.kwh);
+        setSeconds(tick.seconds);
+      },
+      handleEnded,
+    );
   };
 
   // Backend-authoritative reconnect: on a fresh launch (including after
@@ -78,6 +109,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const start = async (c: Charger, bookingId: number) => {
     const session = await startSession(bookingId);
+    setLastReceipt(null);
     setCharger(c);
     setActive(true);
     setVisible(true);
@@ -86,26 +118,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     connect(session.id);
   };
 
-  const end = async (): Promise<EndSessionResponse> => {
+  const triggerSimulateUnplug = async () => {
     const sessionId = sessionIdRef.current;
     if (sessionId === null) {
-      throw new Error("end() called with no active session");
+      throw new Error("simulateUnplug() called with no active session");
     }
-    const result = await endSession(sessionId);
-    disconnect();
-    setActive(false);
-    setVisible(false);
-    setCharger(null);
-    setKwh(0);
-    setSeconds(0);
-    return result;
+    // Deliberately not using the response here — see the doc comment on
+    // the context value above.
+    await simulateUnplug(sessionId);
   };
+
+  const clearReceipt = () => setLastReceipt(null);
 
   const show = () => setVisible(true);
   const hide = () => setVisible(false);
 
   return (
-    <SessionContext.Provider value={{ active, visible, charger, kwh, seconds, start, end, show, hide }}>
+    <SessionContext.Provider
+      value={{ active, visible, charger, kwh, seconds, lastReceipt, start, simulateUnplug: triggerSimulateUnplug, clearReceipt, show, hide }}
+    >
       {children}
     </SessionContext.Provider>
   );
