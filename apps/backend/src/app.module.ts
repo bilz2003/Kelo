@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
+import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
@@ -9,6 +10,7 @@ import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
 import { ChargersModule } from "./chargers/chargers.module";
 import { BookingsModule } from "./bookings/bookings.module";
+import { SessionsModule } from "./sessions/sessions.module";
 
 @Module({
   imports: [
@@ -20,11 +22,16 @@ import { BookingsModule } from "./bookings/bookings.module";
     // than this). /auth/login and /auth/register override it to something
     // much tighter via @Throttle — see auth.controller.ts.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Decouples MockChargerAdapter (which knows nothing about WebSockets)
+    // from SessionsGateway (which knows nothing about meter simulation) —
+    // the adapter just emits "session.tick", the gateway just relays it.
+    EventEmitterModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,
     ChargersModule,
     BookingsModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

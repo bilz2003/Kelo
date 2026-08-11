@@ -24,5 +24,9 @@ import { JwtStrategy } from "./jwt.strategy";
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
+  // JwtModule re-exported so other modules (SessionsModule's WebSocket
+  // gateway) can inject JwtService to verify tokens on a socket handshake,
+  // which isn't an HTTP request Passport's guard can attach to directly.
+  exports: [JwtModule],
 })
 export class AuthModule {}
