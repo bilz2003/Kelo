@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Linking, Pressable } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Linking, Pressable, ActivityIndicator } from "react-native";
 import { Check, MapPin } from "lucide-react-native";
 import { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
@@ -16,7 +16,9 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { nameFor } = useChargerStore();
   const session = useSession();
-  const { charger, details } = route.params;
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const { charger, details, bookingId } = route.params;
   const address = charger.fullAddress;
   const mapsUrl = address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : null;
 
@@ -42,21 +44,34 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
         )}
       </View>
 
+      {startError && (
+        <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", marginBottom: 12 }}>{startError}</Text>
+      )}
+
       <View style={{ width: "100%", gap: 10, marginTop: "auto", paddingBottom: 24 }}>
         <PrimaryButton
-          onPress={() => {
-            session.start(charger);
-            // ActiveSession lives on the root stack, two levels up from
-            // here: this Discover stack -> the tab navigator -> root stack.
-            // getParent's generic lets this stay typed against
-            // RootStackParamList rather than falling back to `any`.
-            navigation
-              .getParent()
-              ?.getParent<NativeStackNavigationProp<RootStackParamList>>()
-              ?.navigate("ActiveSession", { charger });
+          disabled={starting}
+          onPress={async () => {
+            setStartError(null);
+            setStarting(true);
+            try {
+              await session.start(charger, bookingId);
+              // ActiveSession lives on the root stack, two levels up from
+              // here: this Discover stack -> the tab navigator -> root stack.
+              // getParent's generic lets this stay typed against
+              // RootStackParamList rather than falling back to `any`.
+              navigation
+                .getParent()
+                ?.getParent<NativeStackNavigationProp<RootStackParamList>>()
+                ?.navigate("ActiveSession", { charger });
+            } catch (err) {
+              setStartError(err instanceof Error ? err.message : "Couldn't start the session — try again.");
+            } finally {
+              setStarting(false);
+            }
           }}
         >
-          Simulate arrival & start charging
+          {starting ? <ActivityIndicator color={tokens.onAccent} /> : "Simulate arrival & start charging"}
         </PrimaryButton>
         <GhostButton onPress={() => navigation.popToTop()}>Back to Discover</GhostButton>
       </View>

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { Socket } from "socket.io-client";
 import { Charger } from "@kelo/core";
-import { SESSION_FULL_AT_SECONDS } from "@kelo/core";
+import { startSession, endSession, getActiveSession, connectSessionSocket, EndSessionResponse } from "@/api/sessions";
 
 interface SessionContextValue {
   active: boolean;
@@ -13,9 +14,8 @@ interface SessionContextValue {
   charger: Charger | null;
   kwh: number;
   seconds: number;
-  start: (charger: Charger) => void;
-  end: () => void;
-  stopTicking: () => void;
+  start: (charger: Charger, bookingId: number) => Promise<void>;
+  end: () => Promise<EndSessionResponse>;
   show: () => void;
   hide: () => void;
 }
@@ -28,52 +28,84 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [charger, setCharger] = useState<Charger | null>(null);
   const [kwh, setKwh] = useState(0);
   const [seconds, setSeconds] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const sessionIdRef = useRef<number | null>(null);
 
-  // The live tick lives here, above both the driver's ActiveSession screen
-  // and the host's "Charging now" card in My Chargers, so a session
-  // survives navigating away/minimizing and both views agree on the numbers.
+  const connect = (sessionId: number) => {
+    socketRef.current?.disconnect();
+    sessionIdRef.current = sessionId;
+    socketRef.current = connectSessionSocket(sessionId, (tick) => {
+      setKwh(tick.kwh);
+      setSeconds(tick.seconds);
+    });
+  };
+
+  const disconnect = () => {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    sessionIdRef.current = null;
+  };
+
+  // Backend-authoritative reconnect: on a fresh launch (including after
+  // the app was force-quit mid-session), ask whether the signed-in driver
+  // has a session still running server-side. If so, resume showing it —
+  // minimized, not auto-opened — with its real current elapsed state
+  // rather than starting blank. The mock adapter keeps ticking the whole
+  // time regardless of whether anything is subscribed, so this is a real
+  // resume, not a restart.
   useEffect(() => {
-    if (!active || !charger) return;
-    const perSecond = (charger.powerNum / 3600) * 40; // accelerated for live demo
-    intervalRef.current = setInterval(() => {
-      setSeconds((s) => {
-        const next = s + 1;
-        setKwh((k) => (next <= SESSION_FULL_AT_SECONDS ? +(k + perSecond).toFixed(3) : k));
-        return next;
-      });
-    }, 1000);
+    let cancelled = false;
+    (async () => {
+      try {
+        const activeSession = await getActiveSession();
+        if (cancelled || !activeSession) return;
+        setCharger(activeSession.charger);
+        setKwh(activeSession.kwh);
+        setSeconds(activeSession.seconds);
+        setActive(true);
+        setVisible(false);
+        connect(activeSession.id);
+      } catch {
+        // No valid session yet (e.g. not logged in) — nothing to resume.
+      }
+    })();
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      cancelled = true;
     };
-  }, [active, charger?.id]);
+  }, []);
 
-  const start = (c: Charger) => {
+  useEffect(() => disconnect, []);
+
+  const start = async (c: Charger, bookingId: number) => {
+    const session = await startSession(bookingId);
     setCharger(c);
     setActive(true);
     setVisible(true);
     setKwh(0);
     setSeconds(0);
+    connect(session.id);
   };
 
-  const stopTicking = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-  };
-
-  const end = () => {
-    stopTicking();
+  const end = async (): Promise<EndSessionResponse> => {
+    const sessionId = sessionIdRef.current;
+    if (sessionId === null) {
+      throw new Error("end() called with no active session");
+    }
+    const result = await endSession(sessionId);
+    disconnect();
     setActive(false);
     setVisible(false);
     setCharger(null);
     setKwh(0);
     setSeconds(0);
+    return result;
   };
 
   const show = () => setVisible(true);
   const hide = () => setVisible(false);
 
   return (
-    <SessionContext.Provider value={{ active, visible, charger, kwh, seconds, start, end, stopTicking, show, hide }}>
+    <SessionContext.Provider value={{ active, visible, charger, kwh, seconds, start, end, show, hide }}>
       {children}
     </SessionContext.Provider>
   );

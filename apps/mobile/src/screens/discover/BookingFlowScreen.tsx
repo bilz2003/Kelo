@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView } from "react-native";
+import { View, Text, ScrollView, ActivityIndicator } from "react-native";
 import { Clock, Lock } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
@@ -12,6 +12,7 @@ import { DiscoverStackParamList } from "@/navigation/types";
 import { NOW, nextFullHour, startOfDay, dayEndOf, isSameDate, formatTimeOfDay, formatTimeWithDay, formatDuration, dateLabel } from "@kelo/core";
 import { MIN_BOOKING_HOURS, MAX_BOOKING_HOURS } from "@kelo/core";
 import { estimateBookingEnergy } from "@kelo/core";
+import { ensureRealBooking } from "@/api/bookingBridge";
 
 type Props = NativeStackScreenProps<DiscoverStackParamList, "BookingFlow">;
 
@@ -19,6 +20,8 @@ export function BookingFlowScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { nameFor } = useChargerStore();
   const charger = route.params.charger;
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const [arrival, setArrival] = useState(nextFullHour(NOW));
   const [endTime, setEndTime] = useState(new Date(nextFullHour(NOW).getTime() + MIN_BOOKING_HOURS * 3600000));
@@ -94,16 +97,31 @@ export function BookingFlowScreen({ route, navigation }: Props) {
         </View>
       </ScrollView>
 
+      {confirmError && (
+        <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", paddingHorizontal: 20, marginBottom: 8 }}>{confirmError}</Text>
+      )}
+
       <View style={{ padding: 20, paddingBottom: 28, borderTopWidth: 1, borderTopColor: tokens.hair, backgroundColor: tokens.ink }}>
         <PrimaryButton
-          onPress={() =>
-            navigation.navigate("BookingConfirmed", {
-              charger,
-              details: { arrival, endTime, durationHours, estKwh, estCost },
-            })
-          }
+          disabled={confirming}
+          onPress={async () => {
+            setConfirmError(null);
+            setConfirming(true);
+            try {
+              const bookingId = await ensureRealBooking(charger, arrival, endTime);
+              navigation.navigate("BookingConfirmed", {
+                charger,
+                details: { arrival, endTime, durationHours, estKwh, estCost },
+                bookingId,
+              });
+            } catch (err) {
+              setConfirmError(err instanceof Error ? err.message : "Couldn't confirm the booking — try again.");
+            } finally {
+              setConfirming(false);
+            }
+          }}
         >
-          Confirm booking
+          {confirming ? <ActivityIndicator color={tokens.onAccent} /> : "Confirm booking"}
         </PrimaryButton>
       </View>
     </View>

@@ -5,7 +5,10 @@ export type DiscoverStackParamList = {
   DiscoverList: undefined;
   ChargerDetail: { charger: Charger };
   BookingFlow: { charger: Charger };
-  BookingConfirmed: { charger: Charger; details: BookingDetails };
+  // bookingId is a real backend Booking id (see api/bookingBridge.ts) — the
+  // "Simulate arrival & start charging" button needs it to start a real
+  // session, not just flip local state.
+  BookingConfirmed: { charger: Charger; details: BookingDetails; bookingId: number };
 };
 
 export type RootTabParamList = {

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from "react-native";
 import { ChevronDown, Lock, Check, Clock, X } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
@@ -7,6 +7,7 @@ import { fonts, radii } from "@/theme/tokens";
 import { PrimaryButton, GhostButton } from "@/components/Button";
 import { PulseDot } from "@/components/Controls";
 import { useSession } from "@/state/SessionContext";
+import { EndSessionResponse } from "@/api/sessions";
 import { RootStackParamList } from "@/navigation/types";
 import { computeSessionFinancials, SESSION_FULL_AT_SECONDS } from "@kelo/core";
 
@@ -17,9 +18,14 @@ export function ActiveSessionScreen({ navigation }: Props) {
   const session = useSession();
   const [dismissedFullPrompt, setDismissedFullPrompt] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  // The real, backend-computed final numbers — the receipt shows these,
+  // not a local recomputation, since session.end() resets the live
+  // kwh/seconds state as part of the same call.
+  const [receipt, setReceipt] = useState<EndSessionResponse | null>(null);
 
   const charger = session.charger;
-  if (!charger) {
+  if (!charger && !receipt) {
     // Defensive: shouldn't happen since this screen is only ever pushed
     // right after session.start(), but avoids a crash if it somehow is.
     navigation.goBack();
@@ -30,12 +36,22 @@ export function ActiveSessionScreen({ navigation }: Props) {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   const isFull = seconds >= SESSION_FULL_AT_SECONDS;
-  const { idleChargesActive, idleMinutesElapsed, idleCost, energyCost, totalCost } = computeSessionFinancials(charger, kwh, seconds);
+  const { idleChargesActive, idleMinutesElapsed, idleCost, energyCost, totalCost } = charger
+    ? computeSessionFinancials(charger, kwh, seconds)
+    : { idleChargesActive: false, idleMinutesElapsed: 0, idleCost: 0, energyCost: 0, totalCost: 0 };
   const showFullPrompt = isFull && !dismissedFullPrompt;
 
-  const handleEndSession = () => {
-    session.stopTicking();
+  const handleEndSession = async () => {
+    setEndError(null);
     setEnding(true);
+    try {
+      const result = await session.end();
+      setReceipt(result);
+    } catch (err) {
+      setEndError(err instanceof Error ? err.message : "Couldn't end the session — try again.");
+    } finally {
+      setEnding(false);
+    }
   };
 
   const handleMinimize = () => {
@@ -44,17 +60,18 @@ export function ActiveSessionScreen({ navigation }: Props) {
   };
 
   const handleDone = () => {
-    session.end();
     navigation.goBack();
   };
 
-  if (ending) {
+  if (receipt) {
+    const receiptMm = String(Math.floor(receipt.seconds / 60)).padStart(2, "0");
+    const receiptSs = String(receipt.seconds % 60).padStart(2, "0");
     const rows: [string, string][] = [
-      ["Charging rate", `£${charger.rate.toFixed(2)} / kWh`],
-      ["Energy delivered", `${kwh.toFixed(3)} kWh`],
-      ["Energy cost", `£${energyCost.toFixed(2)}`],
+      ["Charging rate", charger ? `£${charger.rate.toFixed(2)} / kWh` : "—"],
+      ["Energy delivered", `${receipt.kwh.toFixed(3)} kWh`],
+      ["Energy cost", `£${receipt.energyCost.toFixed(2)}`],
     ];
-    if (idleCost > 0) rows.push([`Idle occupancy (${idleMinutesElapsed} min)`, `£${idleCost.toFixed(2)}`]);
+    if (receipt.idleCost > 0) rows.push([`Idle occupancy (${receipt.idleMinutesElapsed} min)`, `£${receipt.idleCost.toFixed(2)}`]);
 
     return (
       <View style={{ flex: 1, backgroundColor: tokens.ink }}>
@@ -63,7 +80,7 @@ export function ActiveSessionScreen({ navigation }: Props) {
             <X size={22} color={tokens.textSoft} />
           </View>
           <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 18, color: tokens.text, marginBottom: 4 }}>Session ended</Text>
-          <Text style={{ fontSize: 12.5, color: tokens.textSoft, marginBottom: 28 }}>Power to the charger has stopped · {mm}:{ss} session</Text>
+          <Text style={{ fontSize: 12.5, color: tokens.textSoft, marginBottom: 28 }}>Power to the charger has stopped · {receiptMm}:{receiptSs} session</Text>
 
           <View style={{ width: "100%", backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, paddingHorizontal: 16, marginBottom: 16 }}>
             {rows.map(([k, v]) => (
@@ -74,12 +91,12 @@ export function ActiveSessionScreen({ navigation }: Props) {
             ))}
             <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 14 }}>
               <Text style={{ fontSize: 14, fontWeight: "600", color: tokens.text }}>Total charged</Text>
-              <Text style={{ fontFamily: fonts.mono, fontSize: 17, fontWeight: "500", color: tokens.text }}>£{totalCost.toFixed(2)}</Text>
+              <Text style={{ fontFamily: fonts.mono, fontSize: 17, fontWeight: "500", color: tokens.text }}>£{receipt.totalCost.toFixed(2)}</Text>
             </View>
           </View>
 
           <Text style={{ width: "100%", fontSize: 11.5, color: tokens.textSoft, lineHeight: 17 }}>
-            Verified from {charger.title}'s own meter — this is exactly what was delivered, never an estimate. The £1.49 service charge was already taken when you booked.
+            Verified from {charger?.title ?? "the charger"}'s own meter — this is exactly what was delivered, never an estimate. The £1.49 service charge was already taken when you booked.
           </Text>
         </ScrollView>
         <View style={{ padding: 20, paddingBottom: 28, borderTopWidth: 1, borderTopColor: tokens.hair }}>
@@ -107,7 +124,7 @@ export function ActiveSessionScreen({ navigation }: Props) {
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
         <Text style={{ fontFamily: fonts.mono, fontWeight: "500", fontSize: 56, color: tokens.text, letterSpacing: -0.5 }}>{kwh.toFixed(3)}</Text>
-        <Text style={{ fontSize: 13, color: tokens.textSoft, marginTop: 2, marginBottom: 36 }}>kWh delivered · from {charger.title}'s meter</Text>
+        <Text style={{ fontSize: 13, color: tokens.textSoft, marginTop: 2, marginBottom: 36 }}>kWh delivered · from {charger?.title}'s meter</Text>
 
         <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
           <View style={{ flex: 1, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 14, alignItems: "center" }}>
@@ -128,6 +145,10 @@ export function ActiveSessionScreen({ navigation }: Props) {
           <Text style={{ fontSize: 11.5, color: tokens.textSoft }}>No tap, no power — this session was authorized by Kelo</Text>
         </View>
 
+        {endError && (
+          <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", marginBottom: 12 }}>{endError}</Text>
+        )}
+
         {showFullPrompt ? (
           <View
             style={{
@@ -146,14 +167,16 @@ export function ActiveSessionScreen({ navigation }: Props) {
                 </Text>
                 <Text style={{ fontSize: 12, color: tokens.textSoft, lineHeight: 17 }}>
                   {idleChargesActive
-                    ? `You're being charged £${charger.idleRate.toFixed(2)}/min because the car's been sitting idle in this booked space for over 15 minutes. Release now to stop it adding up.`
+                    ? `You're being charged £${charger?.idleRate.toFixed(2)}/min because the car's been sitting idle in this booked space for over 15 minutes. Release now to stop it adding up.`
                     : "You're still booked until your chosen end time, and you have 15 minutes before any idle charge applies. Release the rest of it now so this driveway is free for someone else to book."}
                 </Text>
               </View>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <View style={{ flex: 1 }}>
-                <PrimaryButton onPress={handleEndSession} style={{ paddingVertical: 11 }}>Release time & end</PrimaryButton>
+                <PrimaryButton onPress={handleEndSession} disabled={ending} style={{ paddingVertical: 11 }}>
+                  {ending ? <ActivityIndicator color={tokens.onAccent} /> : "Release time & end"}
+                </PrimaryButton>
               </View>
               <View style={{ flex: 1 }}>
                 <GhostButton onPress={() => setDismissedFullPrompt(true)} style={{ paddingVertical: 11 }}>
@@ -163,7 +186,9 @@ export function ActiveSessionScreen({ navigation }: Props) {
             </View>
           </View>
         ) : (
-          <GhostButton onPress={handleEndSession} tone="danger">End session</GhostButton>
+          <GhostButton onPress={handleEndSession} tone="danger">
+            {ending ? <ActivityIndicator color={tokens.danger} /> : "End session"}
+          </GhostButton>
         )}
       </View>
     </View>
