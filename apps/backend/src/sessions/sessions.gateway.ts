@@ -11,6 +11,7 @@ import {
 import { Server, Socket } from "socket.io";
 import { SessionsService } from "./sessions.service";
 import { SessionTickEvent } from "./adapters/mock-charger-adapter";
+import { SessionEndedEvent } from "./session-ended.event";
 
 interface JwtPayload {
   sub: number;
@@ -72,5 +73,15 @@ export class SessionsGateway implements OnGatewayConnection {
   @OnEvent("session.tick")
   handleTick(payload: SessionTickEvent) {
     this.server.to(`session:${payload.sessionId}`).emit("tick", payload);
+  }
+
+  /**
+   * Same room every subscriber already joined for ticks — driver and host
+   * connections both receive this in the same broadcast, at the same
+   * moment, not from two separate calls.
+   */
+  @OnEvent("session.ended")
+  handleEnded(payload: SessionEndedEvent) {
+    this.server.to(`session:${payload.sessionId}`).emit("session:ended", payload);
   }
 }

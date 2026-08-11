@@ -13,9 +13,16 @@ export class SessionsController {
     return this.sessionsService.startSession(bookingId, user.userId);
   }
 
-  @Post(":id/end")
-  end(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
-    return this.sessionsService.endSession(id, user.userId);
+  /**
+   * Mock-only stand-in for a real hardware unplug signal (an OCPP
+   * StatusNotification/StopTransaction, or Enode's equivalent) — the ONLY
+   * way a session ends. Delete this endpoint once real charger integration
+   * replaces MockChargerAdapter and the real signal drives simulateUnplug
+   * (or its real-adapter equivalent) directly instead of an app request.
+   */
+  @Post(":id/simulate-unplug")
+  simulateUnplug(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
+    return this.sessionsService.simulateUnplug(id, user.userId);
   }
 
   @Get("active")

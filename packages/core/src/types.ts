@@ -58,6 +58,9 @@ export interface SessionFinancials {
   idleChargesActive: boolean;
   idleMinutesElapsed: number;
   idleCost: number;
+  overstayActive: boolean;
+  overstayMinutesElapsed: number;
+  overstayCost: number;
   energyCost: number;
   totalCost: number; // what the driver is actually charged — gross
   hostNet: number; // what the host actually receives, after Kelo's commission
