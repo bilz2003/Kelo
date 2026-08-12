@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BookingStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 
@@ -14,14 +15,48 @@ export class BookingsService {
       throw new NotFoundException("Charger not found");
     }
 
+    const arrivalAt = new Date(dto.arrivalAt);
+    const endAt = new Date(dto.endAt);
+    await this.assertNoConflict(dto.chargerId, arrivalAt, endAt);
+
     return this.prisma.booking.create({
       data: {
         driverId,
         chargerId: dto.chargerId,
-        arrivalAt: new Date(dto.arrivalAt),
-        endAt: new Date(dto.endAt),
+        arrivalAt,
+        endAt,
       },
     });
+  }
+
+  /**
+   * A booking whose session ended early (Session.endedAt set, before the
+   * booking's own endAt — see SessionsService.simulateUnplug) only blocks
+   * up to that real end, not its originally booked one. A booking with no
+   * session yet, or one whose session hasn't ended, still blocks its full
+   * original window — this is the only thing that changes the blocking
+   * window; nothing here special-cases early vs on-time vs late, it just
+   * falls out of comparing two real timestamps.
+   */
+  private async assertNoConflict(chargerId: number, arrivalAt: Date, endAt: Date) {
+    const candidates = await this.prisma.booking.findMany({
+      where: {
+        chargerId,
+        status: { notIn: [BookingStatus.CANCELLED, BookingStatus.NO_SHOW] },
+        arrivalAt: { lt: endAt },
+      },
+      include: { session: true },
+    });
+
+    const conflict = candidates.some((existing) => {
+      const effectiveEnd =
+        existing.session?.endedAt && existing.session.endedAt < existing.endAt ? existing.session.endedAt : existing.endAt;
+      return arrivalAt < effectiveEnd;
+    });
+
+    if (conflict) {
+      throw new ConflictException("This charger is already booked for part of that time window");
+    }
   }
 
   findAllForDriver(driverId: number) {
