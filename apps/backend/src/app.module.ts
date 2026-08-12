@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { EventEmitterModule } from "@nestjs/event-emitter";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
@@ -12,6 +13,7 @@ import { ChargersModule } from "./chargers/chargers.module";
 import { BookingsModule } from "./bookings/bookings.module";
 import { SessionsModule } from "./sessions/sessions.module";
 import { ExtensionRequestsModule } from "./extension-requests/extension-requests.module";
+import { NoShowModule } from "./no-show/no-show.module";
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { ExtensionRequestsModule } from "./extension-requests/extension-requests
     // from SessionsGateway (which knows nothing about meter simulation) —
     // the adapter just emits "session.tick", the gateway just relays it.
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -34,6 +37,7 @@ import { ExtensionRequestsModule } from "./extension-requests/extension-requests
     BookingsModule,
     SessionsModule,
     ExtensionRequestsModule,
+    NoShowModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
