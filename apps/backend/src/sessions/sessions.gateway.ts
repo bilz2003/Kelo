@@ -12,6 +12,7 @@ import { Server, Socket } from "socket.io";
 import { SessionsService } from "./sessions.service";
 import { SessionTickEvent } from "./adapters/mock-charger-adapter";
 import { SessionEndedEvent } from "./session-ended.event";
+import { ExtensionRequestEvent } from "../extension-requests/extension-request.event";
 
 interface JwtPayload {
   sub: number;
@@ -83,5 +84,23 @@ export class SessionsGateway implements OnGatewayConnection {
   @OnEvent("session.ended")
   handleEnded(payload: SessionEndedEvent) {
     this.server.to(`session:${payload.sessionId}`).emit("session:ended", payload);
+  }
+
+  // Extension requests reuse this same room rather than a new channel —
+  // driver and host both get all three events from one broadcast, same as
+  // tick/session:ended above.
+  @OnEvent("extension.requested")
+  handleExtensionRequested(payload: ExtensionRequestEvent) {
+    this.server.to(`session:${payload.sessionId}`).emit("extension:requested", payload);
+  }
+
+  @OnEvent("extension.approved")
+  handleExtensionApproved(payload: ExtensionRequestEvent) {
+    this.server.to(`session:${payload.sessionId}`).emit("extension:approved", payload);
+  }
+
+  @OnEvent("extension.declined")
+  handleExtensionDeclined(payload: ExtensionRequestEvent) {
+    this.server.to(`session:${payload.sessionId}`).emit("extension:declined", payload);
   }
 }

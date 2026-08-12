@@ -37,13 +37,20 @@ export class BookingsService {
    * original window — this is the only thing that changes the blocking
    * window; nothing here special-cases early vs on-time vs late, it just
    * falls out of comparing two real timestamps.
+   *
+   * Not private: ExtensionRequestsService re-runs this exact check (same
+   * algorithm, not a reimplementation) when a host approves a new end
+   * time, excluding the booking being extended from its own candidate set
+   * via `excludeBookingId` — otherwise a booking would trivially conflict
+   * with itself.
    */
-  private async assertNoConflict(chargerId: number, arrivalAt: Date, endAt: Date) {
+  async assertNoConflict(chargerId: number, arrivalAt: Date, endAt: Date, excludeBookingId?: number) {
     const candidates = await this.prisma.booking.findMany({
       where: {
         chargerId,
         status: { notIn: [BookingStatus.CANCELLED, BookingStatus.NO_SHOW] },
         arrivalAt: { lt: endAt },
+        ...(excludeBookingId !== undefined ? { id: { not: excludeBookingId } } : {}),
       },
       include: { session: true },
     });

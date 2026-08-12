@@ -49,6 +49,12 @@ enum TransactionType {
   NO_SHOW_FEE
 }
 
+enum ExtensionRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
 model User {
   id                     Int      @id @default(autoincrement())
   email                  String   @unique
@@ -120,8 +126,9 @@ model Booking {
   serviceChargePaid Boolean       @default(false)
   createdAt         DateTime      @default(now())
 
-  session      Session?
-  transactions Transaction[]
+  session           Session?
+  transactions      Transaction[]
+  extensionRequests ExtensionRequest[]
 }
 
 model Session {
@@ -150,4 +157,20 @@ model Transaction {
   stripePaymentIntentId String?
   stripeTransferId      String?
   createdAt             DateTime        @default(now())
+}
+
+// A driver-initiated request to push a booking's endAt later, needing the
+// host's approval — a proper audited entity (like Transaction), not fields
+// bolted onto Booking, since "who asked for what, when, and how it was
+// resolved" is exactly the kind of history that shouldn't be overwritten.
+model ExtensionRequest {
+  id             Int                    @id @default(autoincrement())
+  bookingId      Int
+  booking        Booking                @relation(fields: [bookingId], references: [id])
+  requestedEndAt DateTime
+  status         ExtensionRequestStatus @default(PENDING)
+  createdAt      DateTime               @default(now())
+  respondedAt    DateTime?
+
+  @@index([bookingId])
 }

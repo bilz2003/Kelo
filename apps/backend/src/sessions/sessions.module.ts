@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { ExtensionRequestsModule } from "../extension-requests/extension-requests.module";
 import { SessionsController } from "./sessions.controller";
 import { SessionsService } from "./sessions.service";
 import { SessionsGateway } from "./sessions.gateway";
@@ -7,7 +8,7 @@ import { MockChargerAdapter } from "./adapters/mock-charger-adapter";
 import { CHARGER_ADAPTER } from "./adapters/charger-adapter.interface";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, ExtensionRequestsModule],
   controllers: [SessionsController],
   providers: [
     SessionsService,

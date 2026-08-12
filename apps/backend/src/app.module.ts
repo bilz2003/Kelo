@@ -11,6 +11,7 @@ import { UsersModule } from "./users/users.module";
 import { ChargersModule } from "./chargers/chargers.module";
 import { BookingsModule } from "./bookings/bookings.module";
 import { SessionsModule } from "./sessions/sessions.module";
+import { ExtensionRequestsModule } from "./extension-requests/extension-requests.module";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SessionsModule } from "./sessions/sessions.module";
     ChargersModule,
     BookingsModule,
     SessionsModule,
+    ExtensionRequestsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

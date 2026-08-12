@@ -3,6 +3,7 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { BookingStatus, SessionEndedReason, TransactionType } from "@prisma/client";
 import { computeSessionFinancials, ENERGY_COMMISSION, IDLE_COMMISSION, OVERSTAY_COMMISSION } from "@kelo/core";
 import { PrismaService } from "../prisma/prisma.service";
+import { ExtensionRequestsService } from "../extension-requests/extension-requests.service";
 import { CHARGER_ADAPTER, ChargerAdapter } from "./adapters/charger-adapter.interface";
 import { toCoreCharger } from "./charger-mapping";
 import { computeMockMeterState } from "./mock-meter";
@@ -13,6 +14,7 @@ export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly extensionRequests: ExtensionRequestsService,
     @Inject(CHARGER_ADAPTER) private readonly chargerAdapter: ChargerAdapter,
   ) {}
 
@@ -127,13 +129,19 @@ export class SessionsService {
 
     const charger = session.booking.charger;
     const { kwh, seconds } = computeMockMeterState(charger.powerKw, session.startedAt);
+    const pendingExtension = await this.extensionRequests.findPendingForBooking(session.bookingId);
     return {
       id: session.id,
       bookingId: session.bookingId,
       startedAt: session.startedAt,
+      arrivalAt: session.booking.arrivalAt,
+      endAt: session.booking.endAt,
       kwh,
       seconds,
       charger: toCoreCharger(charger),
+      pendingExtension: pendingExtension
+        ? { id: pendingExtension.id, requestedEndAt: pendingExtension.requestedEndAt, status: "pending" as const }
+        : null,
     };
   }
 
