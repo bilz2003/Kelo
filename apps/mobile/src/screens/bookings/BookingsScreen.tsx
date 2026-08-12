@@ -14,7 +14,7 @@ function parseISODate(s: string): Date {
 }
 
 const statusColor = (tokens: ReturnType<typeof useTheme>["tokens"], s: Booking["status"]) =>
-  s === "Upcoming" ? tokens.cyan : s === "Cancelled" ? tokens.danger : tokens.textSoft;
+  s === "Upcoming" ? tokens.cyan : s === "Cancelled" || s === "No show" ? tokens.danger : tokens.textSoft;
 
 export function BookingsScreen() {
   const { tokens } = useTheme();

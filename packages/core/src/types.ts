@@ -42,7 +42,7 @@ export interface Booking {
   title: string;
   host: string;
   date: string; // display string
-  status: "Upcoming" | "Completed" | "Cancelled";
+  status: "Upcoming" | "Completed" | "Cancelled" | "No show";
   cost: string | null;
   dateISO: string; // "YYYY-MM-DD"
 }
