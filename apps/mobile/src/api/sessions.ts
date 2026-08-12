@@ -36,13 +36,29 @@ export interface StartSessionResponse {
   startedAt: string;
 }
 
+/**
+ * Same shape the extension:requested/approved/declined socket events carry
+ * — used both for the live push and for reconstructing state on reconnect
+ * (see ActiveSessionResponse.pendingExtension below).
+ */
+export interface ExtensionRequestEvent {
+  id: number;
+  bookingId: number;
+  sessionId: number;
+  requestedEndAt: string;
+  status: "pending" | "approved" | "declined";
+}
+
 export interface ActiveSessionResponse {
   id: number;
   bookingId: number;
   startedAt: string;
+  arrivalAt: string;
+  endAt: string;
   kwh: number;
   seconds: number;
   charger: Charger;
+  pendingExtension: { id: number; requestedEndAt: string; status: "pending" } | null;
 }
 
 export function startSession(bookingId: number): Promise<StartSessionResponse> {
@@ -61,6 +77,19 @@ export function simulateUnplug(sessionId: number): Promise<SessionEndedEvent> {
 
 export function getActiveSession(): Promise<ActiveSessionResponse | null> {
   return apiFetch("/sessions/active");
+}
+
+/** Driver-only. Rejected server-side if the current endAt has already passed, or the requested time is out of bounds. */
+export function requestExtension(bookingId: number, requestedEndAt: Date): Promise<ExtensionRequestEvent> {
+  return apiFetch(`/bookings/${bookingId}/extension-requests`, {
+    method: "POST",
+    body: { requestedEndAt: requestedEndAt.toISOString() },
+  });
+}
+
+/** Host-only. Approval re-runs the booking-conflict check server-side and can fail even though the original request passed it. */
+export function respondToExtensionRequest(id: number, approve: boolean): Promise<ExtensionRequestEvent> {
+  return apiFetch(`/extension-requests/${id}/respond`, { method: "POST", body: { approve } });
 }
 
 /**
@@ -89,6 +118,7 @@ export function connectSessionSocket(
   sessionId: number,
   onTick: (tick: SessionTick) => void,
   onEnded: (event: SessionEndedEvent) => void,
+  onExtension: (event: ExtensionRequestEvent) => void,
 ): Socket {
   const socket = io(API_URL, {
     autoConnect: true,
@@ -108,6 +138,15 @@ export function connectSessionSocket(
   socket.on("session:ended", (payload: SessionEndedEvent) => {
     if (payload.sessionId === sessionId) onEnded(payload);
   });
+
+  // Driver and host both receive all three of these from the same room —
+  // each screen decides what to render, see SessionContext.
+  const handleExtensionEvent = (payload: ExtensionRequestEvent) => {
+    if (payload.sessionId === sessionId) onExtension(payload);
+  };
+  socket.on("extension:requested", handleExtensionEvent);
+  socket.on("extension:approved", handleExtensionEvent);
+  socket.on("extension:declined", handleExtensionEvent);
 
   return socket;
 }

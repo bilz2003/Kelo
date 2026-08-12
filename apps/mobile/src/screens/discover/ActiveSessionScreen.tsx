@@ -1,14 +1,15 @@
 import React, { useState } from "react";
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from "react-native";
-import { ChevronDown, Lock, Check, Clock, X, Unplug } from "lucide-react-native";
+import { ChevronDown, Lock, Check, Clock, X, Unplug, CalendarClock } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
-import { GhostButton } from "@/components/Button";
+import { GhostButton, PrimaryButton } from "@/components/Button";
 import { PulseDot } from "@/components/Controls";
+import { TimeSlotPicker } from "@/components/TimePickers";
 import { useSession } from "@/state/SessionContext";
 import { RootStackParamList } from "@/navigation/types";
-import { computeSessionFinancials, SESSION_FULL_AT_SECONDS } from "@kelo/core";
+import { computeSessionFinancials, SESSION_FULL_AT_SECONDS, MAX_BOOKING_HOURS, formatTimeWithDay } from "@kelo/core";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActiveSession">;
 
@@ -18,6 +19,10 @@ export function ActiveSessionScreen({ navigation }: Props) {
   const [dismissedFullPrompt, setDismissedFullPrompt] = useState(false);
   const [unplugging, setUnplugging] = useState(false);
   const [unplugError, setUnplugError] = useState<string | null>(null);
+  const [showExtensionPicker, setShowExtensionPicker] = useState(false);
+  const [requestedEndAt, setRequestedEndAt] = useState<Date | null>(null);
+  const [requestingExtension, setRequestingExtension] = useState(false);
+  const [extensionError, setExtensionError] = useState<string | null>(null);
 
   const charger = session.charger;
   const receipt = session.lastReceipt;
@@ -54,6 +59,33 @@ export function ActiveSessionScreen({ navigation }: Props) {
       setUnplugError(err instanceof Error ? err.message : "Couldn't reach the charger — try again.");
     } finally {
       setUnplugging(false);
+    }
+  };
+
+  const { pendingExtension, bookingArrivalAt, bookingEndAt } = session;
+  // Server rejects anything <= the current end, so the picker's own min is
+  // one slot past it — a client-side courtesy, not a substitute for the
+  // server-side check in extension-requests.service.ts.
+  const extensionMin = bookingEndAt ? new Date(bookingEndAt.getTime() + 15 * 60000) : null;
+  const extensionMax = bookingArrivalAt ? new Date(bookingArrivalAt.getTime() + MAX_BOOKING_HOURS * 3600000) : null;
+
+  const openExtensionPicker = () => {
+    if (extensionMin && !requestedEndAt) setRequestedEndAt(extensionMin);
+    setExtensionError(null);
+    setShowExtensionPicker(true);
+  };
+
+  const handleRequestExtension = async () => {
+    if (!requestedEndAt || requestingExtension) return;
+    setExtensionError(null);
+    setRequestingExtension(true);
+    try {
+      await session.requestExtension(requestedEndAt);
+      setShowExtensionPicker(false);
+    } catch (err) {
+      setExtensionError(err instanceof Error ? err.message : "Couldn't send the request — try again.");
+    } finally {
+      setRequestingExtension(false);
     }
   };
 
@@ -189,6 +221,68 @@ export function ActiveSessionScreen({ navigation }: Props) {
 
         {unplugError && (
           <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", marginBottom: 10 }}>{unplugError}</Text>
+        )}
+
+        {pendingExtension?.status === "pending" ? (
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center", backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 14, marginBottom: 14 }}>
+            <CalendarClock size={16} color={tokens.textSoft} />
+            <Text style={{ flex: 1, fontSize: 12.5, color: tokens.textSoft, lineHeight: 18 }}>
+              Waiting for the host to respond — you asked for until {formatTimeWithDay(new Date(pendingExtension.requestedEndAt), bookingArrivalAt ?? new Date())}.
+            </Text>
+          </View>
+        ) : pendingExtension?.status === "approved" ? (
+          <View style={{ backgroundColor: tokens.cyanTint10, borderWidth: 1, borderColor: tokens.cyanTint30, borderRadius: radii.lg, padding: 14, marginBottom: 14 }}>
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <Check size={16} color={tokens.cyan} />
+              <Text style={{ flex: 1, fontSize: 12.5, color: tokens.text, lineHeight: 18 }}>
+                Host approved — your booking now runs until {formatTimeWithDay(new Date(pendingExtension.requestedEndAt), bookingArrivalAt ?? new Date())}.
+              </Text>
+            </View>
+            <GhostButton onPress={session.clearExtensionOutcome} style={{ paddingVertical: 9 }}>Dismiss</GhostButton>
+          </View>
+        ) : pendingExtension?.status === "declined" ? (
+          <View style={{ backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.lg, padding: 14, marginBottom: 14 }}>
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <X size={16} color={tokens.danger} />
+              <Text style={{ flex: 1, fontSize: 12.5, color: tokens.text, lineHeight: 18 }}>Host declined your extension request.</Text>
+            </View>
+            <GhostButton onPress={session.clearExtensionOutcome} style={{ paddingVertical: 9 }}>Dismiss</GhostButton>
+          </View>
+        ) : showExtensionPicker ? (
+          <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 14, marginBottom: 14 }}>
+            {extensionMin && extensionMax && requestedEndAt && (
+              <TimeSlotPicker
+                label="New end time"
+                value={requestedEndAt}
+                onChange={setRequestedEndAt}
+                min={extensionMin}
+                max={extensionMax}
+                anchor={bookingArrivalAt ?? new Date()}
+              />
+            )}
+            {extensionError && (
+              <Text style={{ fontSize: 12, color: tokens.danger, marginBottom: 10 }}>{extensionError}</Text>
+            )}
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <PrimaryButton onPress={handleRequestExtension} style={{ paddingVertical: 11 }}>
+                  {requestingExtension ? <ActivityIndicator color={tokens.onAccent} /> : "Send request to host"}
+                </PrimaryButton>
+              </View>
+              <View style={{ flex: 1 }}>
+                <GhostButton onPress={() => setShowExtensionPicker(false)} style={{ paddingVertical: 11 }}>Cancel</GhostButton>
+              </View>
+            </View>
+          </View>
+        ) : (
+          extensionMin && (
+            <GhostButton onPress={openExtensionPicker} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <CalendarClock size={14} color={tokens.text} />
+                <Text style={{ color: tokens.text, fontFamily: fonts.bodyMedium, fontSize: 14 }}>Request more time</Text>
+              </View>
+            </GhostButton>
+          )
         )}
 
         <View

@@ -55,7 +55,7 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
             setStartError(null);
             setStarting(true);
             try {
-              await session.start(charger, bookingId);
+              await session.start(charger, bookingId, details.arrival, details.endTime);
               // ActiveSession lives on the root stack, two levels up from
               // here: this Discover stack -> the tab navigator -> root stack.
               // getParent's generic lets this stay typed against

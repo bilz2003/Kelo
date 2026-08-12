@@ -1,7 +1,16 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Socket } from "socket.io-client";
 import { Charger } from "@kelo/core";
-import { startSession, simulateUnplug, getActiveSession, connectSessionSocket, SessionEndedEvent } from "@/api/sessions";
+import {
+  startSession,
+  simulateUnplug,
+  getActiveSession,
+  connectSessionSocket,
+  requestExtension as requestExtensionApi,
+  respondToExtensionRequest,
+  SessionEndedEvent,
+  ExtensionRequestEvent,
+} from "@/api/sessions";
 
 interface SessionContextValue {
   active: boolean;
@@ -19,7 +28,18 @@ interface SessionContextValue {
   // that resolves with a result; ending only ever happens because this
   // event arrived (see simulateUnplug below).
   lastReceipt: SessionEndedEvent | null;
-  start: (charger: Charger, bookingId: number) => Promise<void>;
+  // Shared between driver and host views, exactly like kwh/seconds already
+  // are — the driver's ActiveSessionScreen shows "waiting"/outcome from
+  // this, the host's MyChargersScreen live card shows approve/decline from
+  // the same field. Both are driven purely by extension:* socket events
+  // (plus reconnect hydration), never by local button-tap state.
+  pendingExtension: ExtensionRequestEvent | null;
+  // The booking's current window — bookingEndAt moves forward the moment
+  // an extension:approved event arrives, so a picker opened right after
+  // approval bounds itself against the real current end, not a stale one.
+  bookingArrivalAt: Date | null;
+  bookingEndAt: Date | null;
+  start: (charger: Charger, bookingId: number, arrivalAt: Date, endAt: Date) => Promise<void>;
   // Mock-only test trigger, standing in for a real hardware unplug signal.
   // Fire-and-forget: it doesn't return the receipt, doesn't touch local
   // state — the session:ended event handler (wired in connect()) is what
@@ -27,6 +47,15 @@ interface SessionContextValue {
   // unplug the app didn't itself request.
   simulateUnplug: () => Promise<void>;
   clearReceipt: () => void;
+  // Driver-side: fire-and-forget, same pattern as simulateUnplug — the
+  // extension:requested event (received on this same socket, since the
+  // requester is also a room subscriber) is what actually sets
+  // pendingExtension, not this call's return value.
+  requestExtension: (newEndAt: Date) => Promise<void>;
+  // Host-side: fire-and-forget for the same reason — extension:approved/
+  // declined coming back over the socket is what updates pendingExtension.
+  respondToExtension: (approve: boolean) => Promise<void>;
+  clearExtensionOutcome: () => void;
   show: () => void;
   hide: () => void;
 }
@@ -40,13 +69,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [kwh, setKwh] = useState(0);
   const [seconds, setSeconds] = useState(0);
   const [lastReceipt, setLastReceipt] = useState<SessionEndedEvent | null>(null);
+  const [pendingExtension, setPendingExtension] = useState<ExtensionRequestEvent | null>(null);
+  const [bookingArrivalAt, setBookingArrivalAt] = useState<Date | null>(null);
+  const [bookingEndAt, setBookingEndAt] = useState<Date | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<number | null>(null);
+  const bookingIdRef = useRef<number | null>(null);
 
   const disconnect = () => {
     socketRef.current?.disconnect();
     socketRef.current = null;
     sessionIdRef.current = null;
+    bookingIdRef.current = null;
   };
 
   // The only place a session ever transitions to "ended" — driven purely
@@ -61,7 +95,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setCharger(null);
     setKwh(0);
     setSeconds(0);
+    setPendingExtension(null);
+    setBookingArrivalAt(null);
+    setBookingEndAt(null);
     disconnect();
+  };
+
+  const handleExtensionEvent = (event: ExtensionRequestEvent) => {
+    setPendingExtension(event);
+    if (event.status === "approved") {
+      setBookingEndAt(new Date(event.requestedEndAt));
+    }
   };
 
   const connect = (sessionId: number) => {
@@ -74,6 +118,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setSeconds(tick.seconds);
       },
       handleEnded,
+      handleExtensionEvent,
     );
   };
 
@@ -95,6 +140,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setSeconds(activeSession.seconds);
         setActive(true);
         setVisible(false);
+        bookingIdRef.current = activeSession.bookingId;
+        setBookingArrivalAt(new Date(activeSession.arrivalAt));
+        setBookingEndAt(new Date(activeSession.endAt));
+        if (activeSession.pendingExtension) {
+          setPendingExtension({
+            id: activeSession.pendingExtension.id,
+            bookingId: activeSession.bookingId,
+            sessionId: activeSession.id,
+            requestedEndAt: activeSession.pendingExtension.requestedEndAt,
+            status: "pending",
+          });
+        }
         connect(activeSession.id);
       } catch {
         // No valid session yet (e.g. not logged in) — nothing to resume.
@@ -107,14 +164,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => disconnect, []);
 
-  const start = async (c: Charger, bookingId: number) => {
+  const start = async (c: Charger, bookingId: number, arrivalAt: Date, endAt: Date) => {
     const session = await startSession(bookingId);
     setLastReceipt(null);
+    setPendingExtension(null);
     setCharger(c);
     setActive(true);
     setVisible(true);
     setKwh(0);
     setSeconds(0);
+    bookingIdRef.current = bookingId;
+    setBookingArrivalAt(arrivalAt);
+    setBookingEndAt(endAt);
     connect(session.id);
   };
 
@@ -128,14 +189,48 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await simulateUnplug(sessionId);
   };
 
+  const triggerRequestExtension = async (newEndAt: Date) => {
+    const bookingId = bookingIdRef.current;
+    if (bookingId === null) {
+      throw new Error("requestExtension() called with no active booking");
+    }
+    await requestExtensionApi(bookingId, newEndAt);
+  };
+
+  const triggerRespondToExtension = async (approve: boolean) => {
+    if (!pendingExtension) {
+      throw new Error("respondToExtension() called with no pending request");
+    }
+    await respondToExtensionRequest(pendingExtension.id, approve);
+  };
+
   const clearReceipt = () => setLastReceipt(null);
+  const clearExtensionOutcome = () => setPendingExtension(null);
 
   const show = () => setVisible(true);
   const hide = () => setVisible(false);
 
   return (
     <SessionContext.Provider
-      value={{ active, visible, charger, kwh, seconds, lastReceipt, start, simulateUnplug: triggerSimulateUnplug, clearReceipt, show, hide }}
+      value={{
+        active,
+        visible,
+        charger,
+        kwh,
+        seconds,
+        lastReceipt,
+        pendingExtension,
+        bookingArrivalAt,
+        bookingEndAt,
+        start,
+        simulateUnplug: triggerSimulateUnplug,
+        clearReceipt,
+        requestExtension: triggerRequestExtension,
+        respondToExtension: triggerRespondToExtension,
+        clearExtensionOutcome,
+        show,
+        hide,
+      }}
     >
       {children}
     </SessionContext.Provider>
