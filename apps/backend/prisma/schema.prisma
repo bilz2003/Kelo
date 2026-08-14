@@ -94,6 +94,8 @@ model Charger {
   owner             User            @relation(fields: [ownerId], references: [id])
   postcode          String
   fullAddress       String? // private until a booking is paid
+  lat               Float? // geocoded from postcode at create/update time, via postcodes.io
+  lng               Float?
   title             String
   listingName       String? // nullable, falls back to "{host}'s driveway"
   powerKw           Float
