@@ -4,6 +4,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as budgets from "aws-cdk-lib/aws-budgets";
+import * as s3 from "aws-cdk-lib/aws-s3";
 
 export interface KeloInfrastructureStackProps extends cdk.StackProps {
   /** Recipient for the AWS Budgets "over $20/month" email alert. */
@@ -150,6 +151,61 @@ export class KeloInfrastructureStack extends cdk.Stack {
     cdk.Tags.of(database).add("Name", "kelo-dev-db");
 
     // ---------------------------------------------------------------------
+    // Charger photo storage
+    //
+    // Access model: no public bucket policy, no public ACLs, no direct
+    // public reads at all — blockPublicAccess.BLOCK_ALL below makes that
+    // impossible even if a future change accidentally tried to set one.
+    // The backend is expected to generate short-lived presigned URLs (for
+    // both upload and read) using the AWS SDK's default credential
+    // provider chain — the same pattern already used by
+    // apps/backend/src/config/load-database-secret.ts for Secrets
+    // Manager, and already backed by kelo-dev-group's existing
+    // AmazonS3FullAccess (confirmed attached, no new IAM policy needed
+    // for this pass). No new IAM role and no static access keys: the
+    // backend doesn't run on any AWS compute service yet (no ECS/Lambda/
+    // EC2) to attach a true execution role to, so there's nothing cleaner
+    // than the credential chain it already relies on. Revisit this once
+    // the backend actually deploys onto AWS compute.
+    //
+    // Cost decisions, all skipped deliberately at this dev scale ("a
+    // handful of test images"):
+    //   - No versioning: doubles storage cost per overwritten photo for
+    //     no benefit when nothing here needs an undo history yet.
+    //   - No lifecycle rules / Intelligent-Tiering: Intelligent-Tiering
+    //     adds a per-object monitoring charge (~$0.0025 per 1,000
+    //     objects/month) to *save* money on data large/cold enough to
+    //     benefit from auto-tiering — at a handful of objects that's
+    //     pure overhead with nothing to offset it.
+    //   - No cross-region replication: extra storage + inter-region
+    //     transfer cost, no DR requirement at this stage.
+    //   - Storage class: S3 Standard only (the default; never opted into
+    //     anything else).
+    //   - Encryption: SSE-S3 (S3-managed key) — free, so no reason to
+    //     leave it off, same reasoning as RDS's storageEncrypted.
+    // No explicit bucketName: S3 bucket names are globally unique across
+    // *all* AWS accounts, so hardcoding one risks a deploy-time collision
+    // with some unrelated account. Letting CDK generate one and exposing
+    // it via CfnOutput below is what the RDS endpoint/secret outputs
+    // already do for the same reason — the backend reads the real value,
+    // it doesn't guess it.
+    const photosBucket = new s3.Bucket(this, "ChargerPhotosBucket", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      versioned: false,
+      // Dev environment: prioritize easy teardown over data durability,
+      // same tradeoff and same reasoning as the database above.
+      // autoDeleteObjects is required for `cdk destroy` to succeed on a
+      // non-empty bucket (S3 otherwise refuses to delete a bucket that
+      // still has objects in it) — it deploys a small custom-resource
+      // Lambda that only runs on stack update/delete, not on any
+      // ongoing schedule, so it doesn't add meaningful cost.
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+    cdk.Tags.of(photosBucket).add("Name", "kelo-charger-photos");
+
+    // ---------------------------------------------------------------------
     // Budget alert — $20/month, email when actual cost exceeds it.
     new budgets.CfnBudget(this, "MonthlyBudget", {
       budget: {
@@ -198,6 +254,13 @@ export class KeloInfrastructureStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, "VpcId", {
       value: vpc.vpcId,
+    });
+    new cdk.CfnOutput(this, "ChargerPhotosBucketName", {
+      value: photosBucket.bucketName,
+      description: "S3 bucket for charger photos - backend generates presigned URLs, no public access",
+    });
+    new cdk.CfnOutput(this, "ChargerPhotosBucketArn", {
+      value: photosBucket.bucketArn,
     });
   }
 }

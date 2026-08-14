@@ -2,6 +2,8 @@
 
 Last verified against live AWS state: **2026-08-10 19:23 UTC**, via AWS CLI (account `682579209187`, region `eu-west-2`) plus a direct `psql` connection through the SSM tunnel. Everything below is what was actually confirmed deployed/present at that moment, not a restatement of what was intended — re-run the commands in this doc if you need current state and it's been a while.
 
+For non-database infrastructure (currently: the S3 bucket for charger photos), see [INFRASTRUCTURE.md](INFRASTRUCTURE.md). IAM group policies, AWS Budgets, and the `cdk diff`/`cdk deploy` workflow below apply to the whole `KeloInfrastructureDev` stack, not just the database.
+
 ---
 
 ## ⚠️ Read this before running the backend locally
@@ -184,7 +186,6 @@ aws ec2 start-instances --instance-ids i-0c99c7ca2e8b5607c --region eu-west-2
 
 ## Deliberately not done yet
 
-- No S3
 - No Stripe
 - No mock `ChargerAdapter` / WebSocket bridge to the app (BACKEND-PLAN.md §3)
 - No no-show/idle/overstay scheduled-job rules (BACKEND-PLAN.md §4)
