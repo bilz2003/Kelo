@@ -66,6 +66,36 @@ export class BookingsService {
     }
   }
 
+  /**
+   * The single soonest upcoming booking across every charger this user
+   * owns — queried directly by ownerId, not by asking the client which
+   * charger ids it already knows about. Discover/MyChargersScreen still
+   * list chargers from local mock data, so a client-supplied charger id
+   * would only resolve to something real by coincidence; this sidesteps
+   * that entirely and just asks the backend what's actually booked.
+   *
+   * select (not include) on driver — a Booking's driver is a real User
+   * row, and include would return every scalar field on it, passwordHash
+   * included.
+   */
+  findNextUpcomingForOwner(ownerId: number) {
+    return this.prisma.booking.findFirst({
+      where: {
+        charger: { ownerId },
+        status: BookingStatus.UPCOMING,
+        arrivalAt: { gte: new Date() },
+      },
+      orderBy: { arrivalAt: "asc" },
+      select: {
+        id: true,
+        arrivalAt: true,
+        endAt: true,
+        driver: { select: { id: true, name: true } },
+        charger: { select: { id: true, title: true } },
+      },
+    });
+  }
+
   findAllForDriver(driverId: number) {
     return this.prisma.booking.findMany({
       where: { driverId },

@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, FlatList, Pressable, ActivityIndicator } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Plus, Pencil, ChevronRight, Car, CalendarClock } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -9,9 +10,10 @@ import { TimeFilterButton } from "@/components/TimeFilterButton";
 import { useChargerStore } from "@/state/ChargerStoreContext";
 import { useSession } from "@/state/SessionContext";
 import { ExtensionRequestEvent } from "@/api/sessions";
+import { getNextBookingForHost, NextHostBooking } from "@/api/bookings";
 import { computeSessionFinancials } from "@kelo/core";
 import { statsForRange } from "@/data/mockBookings";
-import { defaultTimeRange } from "@kelo/core";
+import { defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay } from "@kelo/core";
 import { Charger, TimeRangeValue } from "@kelo/core";
 
 function MyChargerCard({
@@ -111,6 +113,10 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   const [availability, setAvailability] = useState<Record<number, boolean>>({});
   const [myCarOverride, setMyCarOverride] = useState(false);
   const [statsRange, setStatsRange] = useState<TimeRangeValue>(defaultTimeRange());
+  // undefined = not loaded yet (render nothing, avoid a false-empty flash);
+  // null = loaded, confirmed nothing upcoming (render the honest empty state).
+  const [nextBooking, setNextBooking] = useState<NextHostBooking | null | undefined>(undefined);
+  const [refreshing, setRefreshing] = useState(false);
 
   const s = statsForRange(statsRange.start, statsRange.end);
   const statCards: [string, string][] = [
@@ -118,7 +124,32 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
     ["kWh delivered", s.kwh.toFixed(1)],
     ["Earned", `£${s.earned.toFixed(2)}`],
   ];
-  const nextBookingCharger = myChargers.find((c) => c.id === 1);
+
+  const loadNextBooking = useCallback(async () => {
+    try {
+      const result = await getNextBookingForHost();
+      setNextBooking(result);
+    } catch {
+      // Leave whatever was last successfully loaded rather than flashing
+      // an incorrect empty state on a transient network error.
+    }
+  }, []);
+
+  // Real data, not a mock — refetched every time this tab regains focus
+  // (this screen stays mounted across tab switches, so a one-time
+  // on-mount fetch alone wouldn't pick up a booking that's since gone
+  // no-show or been released early) plus pull-to-refresh below.
+  useFocusEffect(
+    useCallback(() => {
+      loadNextBooking();
+    }, [loadNextBooking]),
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadNextBooking();
+    setRefreshing(false);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink, paddingTop: 54 }}>
@@ -133,6 +164,8 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
         data={myChargers}
         keyExtractor={(c) => String(c.id)}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListHeaderComponent={
           <View style={{ marginBottom: 14 }}>
             <View style={{ marginBottom: 14 }}>
@@ -175,18 +208,26 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
         )}
         ListFooterComponent={
           <View>
-            {nextBookingCharger && (
+            {nextBooking === null ? (
+              <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.xl, padding: 16, marginBottom: 16 }}>
+                <Text style={{ fontSize: 12, color: tokens.textSoft, marginBottom: 6 }}>Next booking</Text>
+                <Text style={{ fontSize: 13.5, color: tokens.text }}>No upcoming bookings right now.</Text>
+              </View>
+            ) : nextBooking ? (
               <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.xl, padding: 16, marginBottom: 16 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: tokens.textSoft }}>Next booking</Text>
                   <Text style={{ fontFamily: fonts.mono, fontSize: 11.5, color: tokens.cyan }}>Upcoming</Text>
                 </View>
                 <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, letterSpacing: 0.4, marginTop: 8, marginBottom: 2 }}>
-                  {nextBookingCharger.title} · {nameFor(nextBookingCharger)}
+                  {nextBooking.charger.title}
                 </Text>
-                <Text style={{ fontSize: 14, color: tokens.text }}>Priya · tomorrow 9:00am – 11:00am</Text>
+                <Text style={{ fontSize: 14, color: tokens.text }}>
+                  {nextBooking.driver.name} · {dateLabel(new Date(nextBooking.arrivalAt))}{" "}
+                  {formatTimeOfDay(new Date(nextBooking.arrivalAt))} – {formatTimeWithDay(new Date(nextBooking.endAt), new Date(nextBooking.arrivalAt))}
+                </Text>
               </View>
-            )}
+            ) : null}
 
             {myChargers.length > 0 && (
               <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.xl, padding: 16 }}>

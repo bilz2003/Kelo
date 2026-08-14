@@ -19,6 +19,13 @@ export class BookingsController {
     return this.bookingsService.findAllForDriver(user.userId);
   }
 
+  // Must come before @Get(":id") — otherwise "next-for-host" would match
+  // the :id route first and fail ParseIntPipe instead of hitting this one.
+  @Get("next-for-host")
+  nextForHost(@CurrentUser() user: RequestUser) {
+    return this.bookingsService.findNextUpcomingForOwner(user.userId);
+  }
+
   @Get(":id")
   findOne(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
     return this.bookingsService.findOneForDriver(user.userId, id);
