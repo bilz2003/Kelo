@@ -1,7 +1,14 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { BookingStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { PUBLIC_CHARGER_SELECT } from "../chargers/chargers.service";
 import { CreateBookingDto } from "./dto/create-booking.dto";
+
+// The driver on a booking gets the charger's real fullAddress (that's the
+// whole point of a booking) but never hostCost — that stays private to the
+// owner regardless of who else can see the booking. select, not include,
+// so a future field added to Charger doesn't leak here by default.
+const DRIVER_CHARGER_SELECT = { ...PUBLIC_CHARGER_SELECT, fullAddress: true };
 
 @Injectable()
 export class BookingsService {
@@ -100,14 +107,22 @@ export class BookingsService {
     return this.prisma.booking.findMany({
       where: { driverId },
       orderBy: { createdAt: "desc" },
-      include: { charger: true },
+      include: { charger: { select: DRIVER_CHARGER_SELECT } },
     });
   }
 
+  /**
+   * Scoped to `driverId` in the query itself, not filtered after the
+   * fact — a booking that isn't this driver's (a different driver's
+   * booking, an unrelated user, even the charger's own host unless they
+   * also happen to be the driver on it) simply doesn't match and 404s,
+   * same as any other not-found resource. This is also the only place
+   * fullAddress is exposed outside the owner's own listing view.
+   */
   async findOneForDriver(driverId: number, id: number) {
     const booking = await this.prisma.booking.findFirst({
       where: { id, driverId },
-      include: { charger: true },
+      include: { charger: { select: DRIVER_CHARGER_SELECT } },
     });
     if (!booking) {
       throw new NotFoundException("Booking not found");
