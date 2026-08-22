@@ -33,6 +33,10 @@ export const PUBLIC_CHARGER_SELECT = {
   lat: true,
   lng: true,
   createdAt: true,
+  // The host's name, not their contact details — same as any marketplace
+  // listing (Airbnb, etc.) showing who you'd be dealing with before you
+  // book. Not remotely the same privacy class as fullAddress/hostCost.
+  owner: { select: { name: true } },
 } satisfies Prisma.ChargerSelect;
 
 @Injectable()
