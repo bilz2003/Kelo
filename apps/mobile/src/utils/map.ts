@@ -19,11 +19,21 @@ export const POSTCODE_COORDS: Record<string, { x: number; y: number }> = {
 };
 
 /**
+ * POSTCODE_COORDS is keyed by outcode (e.g. "SM5"), not a full postcode —
+ * true of the mock data (which only ever stored bare outcodes) but real
+ * backend chargers carry a full postcode like "SM1 1EA". Extracting the
+ * outcode keeps the lookup working for real data; an outcode outside this
+ * fixed set (this map only covers one corner of London, illustratively)
+ * still falls through to the same center-point default as before.
+ */
+const outcodeOf = (postcode: string): string => postcode.trim().toUpperCase().split(/\s+/)[0];
+
+/**
  * Deterministic small offset so multiple chargers sharing a postcode fan
  * out into a little cluster instead of stacking exactly on top of each other.
  */
 export const pinPosition = (charger: Charger): { x: number; y: number } => {
-  const base = POSTCODE_COORDS[charger.postcode] || { x: 50, y: 50 };
+  const base = POSTCODE_COORDS[outcodeOf(charger.postcode)] || { x: 50, y: 50 };
   const angle = (charger.id * 47) % 360;
   const radius = 3.2;
   const rad = (angle * Math.PI) / 180;
