@@ -1,12 +1,17 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { Charger, ListingNameMap } from "@kelo/core";
 import { CHARGERS, defaultListingName } from "@/data/mockChargers";
+import { getDiscoverChargers, mapDiscoverCharger } from "@/api/chargers";
+import { ApiError } from "@/api/client";
 
 export const namesMatch = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 interface ChargerStoreValue {
-  chargers: Charger[]; // all visible chargers (Discover), with overrides applied
-  myChargers: Charger[]; // this host's own chargers, with overrides applied
+  chargers: Charger[]; // real chargers from GET /chargers/discover (Discover)
+  chargersLoading: boolean;
+  chargersError: string | null;
+  refetchChargers: (radiusMiles?: number) => Promise<void>;
+  myChargers: Charger[]; // this host's own chargers, with overrides applied — still mock, Add/Edit Charger is a later pass
   hostIdentity: { host: string; initials: string };
   nameFor: (c: Charger) => string;
   setNameFor: (id: number, value: string) => void;
@@ -24,6 +29,25 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   const [addedChargers, setAddedChargers] = useState<Charger[]>([]);
   const [removedIds, setRemovedIds] = useState<number[]>([]);
 
+  // Discover is real backend data now — no relation to the mock
+  // CHARGERS/overrides/addedChargers machinery below, which still drives
+  // myChargers until Add/Edit Charger is wired to the backend too.
+  const [chargers, setChargers] = useState<Charger[]>([]);
+  const [chargersLoading, setChargersLoading] = useState(true);
+  const [chargersError, setChargersError] = useState<string | null>(null);
+  const refetchChargers = useCallback(async (radiusMiles?: number) => {
+    setChargersLoading(true);
+    setChargersError(null);
+    try {
+      const data = await getDiscoverChargers(radiusMiles);
+      setChargers(data.map(mapDiscoverCharger));
+    } catch (err) {
+      setChargersError(err instanceof ApiError ? err.message : "Couldn't load chargers — check your connection and try again.");
+    } finally {
+      setChargersLoading(false);
+    }
+  }, []);
+
   const nameFor = (c: Charger) => {
     const custom = listingNames[c.id];
     return custom && custom.trim() ? custom : defaultListingName(c);
@@ -39,10 +63,6 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   const allChargersEver = useMemo(() => [...CHARGERS, ...addedChargers], [addedChargers]);
   const isRemoved = (id: number) => removedIds.includes(id);
 
-  const chargers = useMemo(
-    () => allChargersEver.filter((c) => !isRemoved(c.id)).map(effectiveCharger),
-    [allChargersEver, removedIds, overrides]
-  );
   const myChargers = useMemo(
     () => [CHARGERS[0], ...addedChargers].filter((c) => !isRemoved(c.id)).map(effectiveCharger),
     [addedChargers, removedIds, overrides]
@@ -76,7 +96,20 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
 
   return (
     <ChargerStoreContext.Provider
-      value={{ chargers, myChargers, hostIdentity, nameFor, setNameFor, updateCharger, addCharger, removeCharger, siblingNames }}
+      value={{
+        chargers,
+        chargersLoading,
+        chargersError,
+        refetchChargers,
+        myChargers,
+        hostIdentity,
+        nameFor,
+        setNameFor,
+        updateCharger,
+        addCharger,
+        removeCharger,
+        siblingNames,
+      }}
     >
       {children}
     </ChargerStoreContext.Provider>

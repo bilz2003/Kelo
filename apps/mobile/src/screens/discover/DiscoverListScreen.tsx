@@ -1,6 +1,6 @@
-import React, { useRef, useState } from "react";
-import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
-import { Search, SlidersHorizontal, MapPin, ChevronRight } from "lucide-react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
+import { Search, SlidersHorizontal, MapPin, ChevronRight, TriangleAlert } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -52,7 +52,7 @@ function ChargerCard({ charger, name, onPress }: { charger: Charger; name: strin
 
 export function DiscoverListScreen({ navigation }: Props) {
   const { tokens } = useTheme();
-  const { chargers, nameFor } = useChargerStore();
+  const { chargers, chargersLoading, chargersError, refetchChargers, nameFor } = useChargerStore();
   const [filter, setFilter] = useState("All");
   const [radius, setRadius] = useState(5);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -60,6 +60,14 @@ export function DiscoverListScreen({ navigation }: Props) {
   const [mapPinSelected, setMapPinSelected] = useState<Charger | null>(null);
   const { translateY: sheetTranslateY, backdropOpacity, animateOut, springBack } = useSlideSheet(!!mapPinSelected);
   const closeSheet = () => animateOut(() => setMapPinSelected(null));
+
+  // Radius is server-side filtering (GET /chargers/discover?radiusMiles=),
+  // not a client-side re-filter of an already-fetched list — so changing
+  // the chip genuinely refetches against real distances, same as the
+  // initial load.
+  useEffect(() => {
+    refetchChargers(radius);
+  }, [radius]);
 
   // The search bar + filter chips tuck away while scrolling down the list
   // (more room to browse) and reappear scrolling up or near the top —
@@ -81,7 +89,10 @@ export function DiscoverListScreen({ navigation }: Props) {
     Animated.timing(searchAnim, { toValue: searchVisible ? 1 : 0, duration: 220, useNativeDriver: false }).start();
   }, [searchVisible]);
 
-  const visible = chargers.filter((c) => parseFloat(c.distance) <= radius);
+  // Already filtered to radius and sorted nearest-first by the backend —
+  // no client-side re-filtering needed (or possible: distance is now a
+  // real computed value, not a mock string to re-parse).
+  const visible = chargers;
 
   const goToDetail = (c: Charger) => {
     // Clear the map selection on navigate-away, not just on manual dismiss —
@@ -154,7 +165,7 @@ export function DiscoverListScreen({ navigation }: Props) {
 
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 12 }}>
         <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>
-          {visible.length} chargers within {radius} mi
+          {chargersLoading ? "Loading…" : `${visible.length} chargers within ${radius} mi`}
         </Text>
         <View style={{ flexDirection: "row", gap: 3, backgroundColor: tokens.surface2, borderRadius: radii.sm, padding: 3 }}>
           {(["list", "map"] as const).map((key) => (
@@ -171,7 +182,24 @@ export function DiscoverListScreen({ navigation }: Props) {
         </View>
       </View>
 
-      {visible.length === 0 ? (
+      {chargersLoading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60 }}>
+          <ActivityIndicator color={tokens.cyan} />
+        </View>
+      ) : chargersError ? (
+        <View style={{ paddingHorizontal: 20 }}>
+          <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
+            <TriangleAlert size={18} color={tokens.danger} style={{ marginBottom: 8 }} />
+            <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center", marginBottom: 14 }}>{chargersError}</Text>
+            <Pressable
+              onPress={() => refetchChargers(radius)}
+              style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 16 }}
+            >
+              <Text style={{ fontSize: 12.5, fontWeight: "500", color: tokens.text }}>Try again</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : visible.length === 0 ? (
         <View style={{ paddingHorizontal: 20 }}>
           <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
             <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center" }}>No chargers within {radius} mi. Try a wider radius.</Text>
