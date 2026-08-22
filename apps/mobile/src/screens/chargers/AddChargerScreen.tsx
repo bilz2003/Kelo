@@ -52,6 +52,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         distance: "0.3 mi",
         rating: null,
         sessions: 0,
+        available: true,
       },
       name.trim()
     );

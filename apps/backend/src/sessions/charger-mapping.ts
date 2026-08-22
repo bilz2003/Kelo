@@ -29,5 +29,6 @@ export function toCoreCharger(charger: PrismaCharger): Charger {
     distance: "",
     rating: null,
     sessions: 0,
+    available: charger.available,
   };
 }

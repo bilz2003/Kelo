@@ -23,6 +23,7 @@ const SAMPLE_CHARGER: Charger = {
   distance: "0 mi",
   rating: null,
   sessions: 0,
+  available: true,
 };
 
 @Injectable()

@@ -17,6 +17,7 @@ export interface Charger {
   distance: string; // display string, e.g. "0.4 mi" — real app: computed from geocoded location
   rating: number | null; // null = no sessions yet ("New listing")
   sessions: number;
+  available: boolean; // whether the host currently accepts bookings on this charger
   photos?: string[]; // up to 2, data URLs on web; local URIs from expo-image-picker on native
 }
 
