@@ -2,57 +2,19 @@ import { Charger } from "@kelo/core";
 import { apiFetch } from "./client";
 
 /**
- * Discover/AddCharger/booking browsing still run entirely on local mock
- * data (ChargerStoreContext) — there's no "list real chargers" endpoint
- * yet, that's separate scope. But starting a real session needs a real
- * Booking row, which needs a real Charger row to point at. This bridges
- * the two: lazily creates a backend Charger mirroring the mock one (cached
- * per mock charger id so repeat bookings don't spawn duplicates for the
- * lifetime of the app process), then a real Booking against it.
- *
- * Consistent with Kelo's one-account model: the signed-in user ends up as
- * both the Charger's owner and the Booking's driver, exactly like a host
- * would look if they booked their own driveway for a test session.
+ * Discover now returns real backend chargers (GET /chargers/discover) —
+ * charger.id is already a real Charger row's id, so booking is a direct
+ * POST /bookings against it. This used to lazily mirror the mock charger
+ * into a new backend Charger first (there was no real Discover data to
+ * book against yet); that's gone now there's a real id to use directly,
+ * which also means this never touches charger.fullAddress/hostCost —
+ * neither is present on a Discover-sourced charger to begin with.
  */
-
-const realChargerIdCache = new Map<number, number>();
-
-function toCableType(cable: Charger["cable"]): "TETHERED" | "BRING_YOUR_OWN" {
-  return cable === "Tethered cable" ? "TETHERED" : "BRING_YOUR_OWN";
-}
-
-async function ensureRealCharger(charger: Charger): Promise<number> {
-  const cached = realChargerIdCache.get(charger.id);
-  if (cached !== undefined) return cached;
-
-  const created = await apiFetch<{ id: number }>("/chargers", {
-    method: "POST",
-    body: {
-      postcode: charger.postcode,
-      fullAddress: charger.fullAddress,
-      title: charger.title,
-      powerKw: charger.powerNum,
-      cable: toCableType(charger.cable),
-      connector: charger.connector,
-      rate: charger.rate,
-      overstayRate: charger.overstayRate,
-      idleRate: charger.idleRate,
-      noShowFee: charger.noShowFee,
-      hostCost: charger.hostCost,
-      connectionRoute: "OCPP",
-    },
-  });
-
-  realChargerIdCache.set(charger.id, created.id);
-  return created.id;
-}
-
 export async function ensureRealBooking(charger: Charger, arrival: Date, endTime: Date): Promise<number> {
-  const realChargerId = await ensureRealCharger(charger);
   const booking = await apiFetch<{ id: number }>("/bookings", {
     method: "POST",
     body: {
-      chargerId: realChargerId,
+      chargerId: charger.id,
       arrivalAt: arrival.toISOString(),
       endAt: endTime.toISOString(),
     },

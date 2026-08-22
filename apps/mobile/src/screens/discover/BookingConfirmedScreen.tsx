@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, Linking, Pressable, ActivityIndicator } from "react-native";
 import { Check, MapPin } from "lucide-react-native";
 import { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -9,6 +9,8 @@ import { useChargerStore } from "@/state/ChargerStoreContext";
 import { useSession } from "@/state/SessionContext";
 import { DiscoverStackParamList, RootStackParamList } from "@/navigation/types";
 import { dateLabel, formatTimeOfDay, formatTimeWithDay } from "@kelo/core";
+import { getBookingDetail } from "@/api/bookings";
+import { ApiError } from "@/api/client";
 
 type Props = NativeStackScreenProps<DiscoverStackParamList, "BookingConfirmed">;
 
@@ -19,7 +21,27 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const { charger, details, bookingId } = route.params;
-  const address = charger.fullAddress;
+
+  // charger came through navigation params from Discover, which never
+  // carries fullAddress (see PUBLIC_CHARGER_SELECT on the backend) — the
+  // real address only exists behind the booking-detail endpoint, scoped to
+  // the driver on this specific booking, fetched fresh now that the
+  // booking is real. Not read from `charger` directly.
+  const [address, setAddress] = useState<string | null | undefined>(undefined); // undefined = still loading
+  const [addressError, setAddressError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getBookingDetail(bookingId)
+      .then((booking) => {
+        if (!cancelled) setAddress(booking.charger.fullAddress);
+      })
+      .catch((err) => {
+        if (!cancelled) setAddressError(err instanceof ApiError ? err.message : "Couldn't load the address — try again.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingId]);
   const mapsUrl = address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : null;
 
   return (
@@ -35,7 +57,13 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
 
       <View style={{ width: "100%", backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 18, marginBottom: 32 }}>
         <Text style={{ fontFamily: fonts.mono, fontSize: 10.5, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>Exact address</Text>
-        <Text style={{ fontSize: 14, color: tokens.text }}>{address || `Not yet added by host — use ${charger.postcode} for now.`}</Text>
+        {address === undefined && !addressError ? (
+          <ActivityIndicator color={tokens.cyan} style={{ alignSelf: "flex-start", marginTop: 2 }} />
+        ) : (
+          <Text style={{ fontSize: 14, color: tokens.text }}>
+            {addressError || address || `Not yet added by host — use ${charger.postcode} for now.`}
+          </Text>
+        )}
         {mapsUrl && (
           <Pressable onPress={() => Linking.openURL(mapsUrl)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12 }}>
             <MapPin size={13} color={tokens.cyan} />
