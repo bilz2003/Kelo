@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { View, Text, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { Plus, Pencil, ChevronRight, Car, CalendarClock } from "lucide-react-native";
+import { Plus, Pencil, ChevronRight, Car, CalendarClock, TriangleAlert } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { Toggle, PulseDot } from "@/components/Controls";
@@ -9,6 +9,7 @@ import { GhostButton, PrimaryButton } from "@/components/Button";
 import { TimeFilterButton } from "@/components/TimeFilterButton";
 import { useChargerStore } from "@/state/ChargerStoreContext";
 import { useSession } from "@/state/SessionContext";
+import { useAuth } from "@/state/AuthContext";
 import { ExtensionRequestEvent } from "@/api/sessions";
 import { getNextBookingForHost, NextHostBooking } from "@/api/bookings";
 import { computeSessionFinancials } from "@kelo/core";
@@ -17,9 +18,9 @@ import { defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay } from 
 import { Charger, TimeRangeValue } from "@kelo/core";
 
 function MyChargerCard({
-  charger, name, available, onToggleAvailable, onEdit, isCharging, liveKwh, liveSeconds, pendingExtension, onRespondExtension,
+  charger, name, onToggleAvailable, onEdit, isCharging, liveKwh, liveSeconds, pendingExtension, onRespondExtension,
 }: {
-  charger: Charger; name: string; available: boolean; onToggleAvailable: () => void; onEdit: () => void;
+  charger: Charger; name: string; onToggleAvailable: () => Promise<void>; onEdit: () => void;
   isCharging: boolean; liveKwh: number; liveSeconds: number;
   pendingExtension: ExtensionRequestEvent | null;
   onRespondExtension: (approve: boolean) => Promise<void>;
@@ -27,6 +28,7 @@ function MyChargerCard({
   const { tokens } = useTheme();
   const [responding, setResponding] = useState(false);
   const [respondError, setRespondError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const live = isCharging ? computeSessionFinancials(charger, liveKwh, liveSeconds) : null;
 
   const respond = async (approve: boolean) => {
@@ -39,6 +41,15 @@ function MyChargerCard({
       setRespondError(err instanceof Error ? err.message : "Couldn't send your response — try again.");
     } finally {
       setResponding(false);
+    }
+  };
+
+  const toggleAvailable = async () => {
+    setToggleError(null);
+    try {
+      await onToggleAvailable();
+    } catch (err) {
+      setToggleError(err instanceof Error ? err.message : "Couldn't update availability — try again.");
     }
   };
 
@@ -91,9 +102,12 @@ function MyChargerCard({
           )}
         </View>
       ) : (
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: tokens.hair }}>
-          <Text style={{ fontSize: 13.5, color: tokens.text }}>Available for booking</Text>
-          <Toggle on={available} onToggle={onToggleAvailable} />
+        <View style={{ paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: tokens.hair }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 13.5, color: tokens.text }}>Available for booking</Text>
+            <Toggle on={charger.available} onToggle={toggleAvailable} />
+          </View>
+          {toggleError && <Text style={{ fontSize: 11.5, color: tokens.danger, marginTop: 8 }}>{toggleError}</Text>}
         </View>
       )}
 
@@ -108,9 +122,9 @@ function MyChargerCard({
 
 export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit: (id: number) => void }) {
   const { tokens } = useTheme();
-  const { myChargers, nameFor } = useChargerStore();
+  const { myChargers, myChargersLoading, myChargersError, refetchMyChargers, toggleChargerAvailability, nameFor } = useChargerStore();
+  const { user } = useAuth();
   const session = useSession();
-  const [availability, setAvailability] = useState<Record<number, boolean>>({});
   const [myCarOverride, setMyCarOverride] = useState(false);
   const [statsRange, setStatsRange] = useState<TimeRangeValue>(defaultTimeRange());
   // undefined = not loaded yet (render nothing, avoid a false-empty flash);
@@ -138,16 +152,20 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   // Real data, not a mock — refetched every time this tab regains focus
   // (this screen stays mounted across tab switches, so a one-time
   // on-mount fetch alone wouldn't pick up a booking that's since gone
-  // no-show or been released early) plus pull-to-refresh below.
+  // no-show or been released early, or a charger edited/toggled from
+  // elsewhere) plus pull-to-refresh below. user is always set here (this
+  // screen only renders once authenticated) — the fallback is just to
+  // satisfy the type without an unnecessary null check at the call site.
   useFocusEffect(
     useCallback(() => {
       loadNextBooking();
-    }, [loadNextBooking]),
+      refetchMyChargers(user?.name ?? "");
+    }, [loadNextBooking, refetchMyChargers, user]),
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadNextBooking();
+    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? "")]);
     setRefreshing(false);
   };
 
@@ -160,6 +178,24 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
         </Pressable>
       </View>
 
+      {myChargersLoading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60 }}>
+          <ActivityIndicator color={tokens.cyan} />
+        </View>
+      ) : myChargersError ? (
+        <View style={{ paddingHorizontal: 20 }}>
+          <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
+            <TriangleAlert size={18} color={tokens.danger} style={{ marginBottom: 8 }} />
+            <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center", marginBottom: 14 }}>{myChargersError}</Text>
+            <Pressable
+              onPress={() => refetchMyChargers(user?.name ?? "")}
+              style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 16 }}
+            >
+              <Text style={{ fontSize: 12.5, fontWeight: "500", color: tokens.text }}>Try again</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
       <FlatList
         data={myChargers}
         keyExtractor={(c) => String(c.id)}
@@ -196,8 +232,7 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
           <MyChargerCard
             charger={item}
             name={nameFor(item)}
-            available={availability[item.id] ?? true}
-            onToggleAvailable={() => setAvailability((prev) => ({ ...prev, [item.id]: !(prev[item.id] ?? true) }))}
+            onToggleAvailable={() => toggleChargerAvailability(item.id)}
             onEdit={() => onEdit(item.id)}
             isCharging={session.active && session.charger?.id === item.id}
             liveKwh={session.kwh}
@@ -246,6 +281,7 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
           </View>
         }
       />
+      )}
     </View>
   );
 }

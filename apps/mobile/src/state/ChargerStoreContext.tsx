@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { Charger, ListingNameMap } from "@kelo/core";
 import { CHARGERS, defaultListingName } from "@/data/mockChargers";
-import { getDiscoverChargers, mapDiscoverCharger } from "@/api/chargers";
+import { getDiscoverChargers, mapDiscoverCharger, getMyChargers, mapOwnerCharger, setChargerAvailability } from "@/api/chargers";
 import { ApiError } from "@/api/client";
 
 export const namesMatch = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -11,7 +11,14 @@ interface ChargerStoreValue {
   chargersLoading: boolean;
   chargersError: string | null;
   refetchChargers: (radiusMiles?: number) => Promise<void>;
-  myChargers: Charger[]; // this host's own chargers, with overrides applied — still mock, Add/Edit Charger is a later pass
+  myChargers: Charger[]; // real chargers from GET /chargers (owner-scoped), with local overrides applied
+  myChargersLoading: boolean;
+  myChargersError: string | null;
+  // ownerName: GET /chargers has no owner.name to derive host/initials from
+  // (the caller already knows who they are) — the caller passes the
+  // signed-in user's own name in, same as AuthContext already exposes it.
+  refetchMyChargers: (ownerName: string) => Promise<void>;
+  toggleChargerAvailability: (id: number) => Promise<void>;
   hostIdentity: { host: string; initials: string };
   nameFor: (c: Charger) => string;
   setNameFor: (id: number, value: string) => void;
@@ -30,8 +37,7 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   const [removedIds, setRemovedIds] = useState<number[]>([]);
 
   // Discover is real backend data now — no relation to the mock
-  // CHARGERS/overrides/addedChargers machinery below, which still drives
-  // myChargers until Add/Edit Charger is wired to the backend too.
+  // CHARGERS/overrides/addedChargers machinery below.
   const [chargers, setChargers] = useState<Charger[]>([]);
   const [chargersLoading, setChargersLoading] = useState(true);
   const [chargersError, setChargersError] = useState<string | null>(null);
@@ -48,6 +54,49 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  // My Chargers is real backend data too (GET /chargers, owner-scoped) —
+  // myChargersBase holds it raw; overrides/removedIds (below) still apply
+  // on top, exactly as they did over the old mock array, so Edit/Remove
+  // Charger keep behaving the same way they always have (visible within
+  // the session, not persisted — that was already true before this, for
+  // every field except availability, which now really does persist; see
+  // toggleChargerAvailability). Add Charger's addedChargers is
+  // deliberately NOT merged in here — see the comment on myChargers below.
+  const [myChargersBase, setMyChargersBase] = useState<Charger[]>([]);
+  const [myChargersLoading, setMyChargersLoading] = useState(true);
+  const [myChargersError, setMyChargersError] = useState<string | null>(null);
+  const refetchMyChargers = useCallback(async (ownerName: string) => {
+    setMyChargersLoading(true);
+    setMyChargersError(null);
+    try {
+      const data = await getMyChargers();
+      setMyChargersBase(data.map((oc) => mapOwnerCharger(oc, ownerName)));
+    } catch (err) {
+      setMyChargersError(err instanceof ApiError ? err.message : "Couldn't load your chargers — check your connection and try again.");
+    } finally {
+      setMyChargersLoading(false);
+    }
+  }, []);
+
+  // Optimistic: flips locally first so the toggle feels instant, then
+  // confirms against the real PATCH — reverted on failure rather than
+  // left showing a state the backend never actually accepted.
+  const toggleChargerAvailability = useCallback(
+    async (id: number) => {
+      const current = myChargersBase.find((c) => c.id === id);
+      if (!current) return;
+      const next = !current.available;
+      setMyChargersBase((prev) => prev.map((c) => (c.id === id ? { ...c, available: next } : c)));
+      try {
+        await setChargerAvailability(id, next);
+      } catch (err) {
+        setMyChargersBase((prev) => prev.map((c) => (c.id === id ? { ...c, available: !next } : c)));
+        throw err;
+      }
+    },
+    [myChargersBase],
+  );
+
   const nameFor = (c: Charger) => {
     const custom = listingNames[c.id];
     return custom && custom.trim() ? custom : defaultListingName(c);
@@ -59,13 +108,25 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
     setOverrides((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
 
   // Unfiltered history — used for id generation, so a removed charger's id
-  // is never reissued to a new one.
+  // is never reissued to a new one. Still mock-only: Add Charger writes
+  // here, not to the backend (out of scope this pass) — see the comment
+  // on myChargers below for what that means for the real list.
   const allChargersEver = useMemo(() => [...CHARGERS, ...addedChargers], [addedChargers]);
   const isRemoved = (id: number) => removedIds.includes(id);
 
+  // Deliberately real-data-only: addedChargers (from the still-mock Add
+  // Charger flow) is NOT merged in. Its ids are locally generated
+  // (Math.max of the mock catalog + whatever's been added) and have no
+  // relationship to real backend ids — blending the two risks a real
+  // charger and a fake one sharing an id, and would make an unsaved mock
+  // addition look identically "real" as something actually persisted.
+  // Concretely: right now, adding a charger via Add Charger has no visible
+  // effect on this list at all — it appends to addedChargers, which
+  // nothing here reads. Wiring Add Charger to a real POST /chargers call
+  // is the fix, and is its own separate pass.
   const myChargers = useMemo(
-    () => [CHARGERS[0], ...addedChargers].filter((c) => !isRemoved(c.id)).map(effectiveCharger),
-    [addedChargers, removedIds, overrides]
+    () => myChargersBase.filter((c) => !isRemoved(c.id)).map(effectiveCharger),
+    [myChargersBase, removedIds, overrides]
   );
   const hostIdentity = { host: CHARGERS[0].host, initials: CHARGERS[0].initials };
 
@@ -102,6 +163,10 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
         chargersError,
         refetchChargers,
         myChargers,
+        myChargersLoading,
+        myChargersError,
+        refetchMyChargers,
+        toggleChargerAvailability,
         hostIdentity,
         nameFor,
         setNameFor,
