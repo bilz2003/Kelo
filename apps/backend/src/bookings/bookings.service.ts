@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { BookingStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PUBLIC_CHARGER_SELECT } from "../chargers/chargers.service";
+import { PhotosService } from "../photos/photos.service";
 import { CreateBookingDto } from "./dto/create-booking.dto";
 
 // The driver on a booking gets the charger's real fullAddress (that's the
@@ -12,7 +13,10 @@ const DRIVER_CHARGER_SELECT = { ...PUBLIC_CHARGER_SELECT, fullAddress: true };
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly photos: PhotosService,
+  ) {}
 
   async create(driverId: number, dto: CreateBookingDto) {
     const charger = await this.prisma.charger.findFirst({
@@ -103,12 +107,13 @@ export class BookingsService {
     });
   }
 
-  findAllForDriver(driverId: number) {
-    return this.prisma.booking.findMany({
+  async findAllForDriver(driverId: number) {
+    const bookings = await this.prisma.booking.findMany({
       where: { driverId },
       orderBy: { createdAt: "desc" },
       include: { charger: { select: DRIVER_CHARGER_SELECT } },
     });
+    return Promise.all(bookings.map(async (b) => ({ ...b, charger: await this.photos.resolveCharger(b.charger) })));
   }
 
   /**
@@ -127,6 +132,6 @@ export class BookingsService {
     if (!booking) {
       throw new NotFoundException("Booking not found");
     }
-    return booking;
+    return { ...booking, charger: await this.photos.resolveCharger(booking.charger) };
   }
 }

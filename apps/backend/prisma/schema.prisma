@@ -110,6 +110,7 @@ model Charger {
   ocppChargePointId String? // set if connectionRoute = OCPP
   enodeVehicleId    String? // set if connectionRoute = ENODE
   available         Boolean         @default(true)
+  photoKeys         String[]        @default([]) // S3 object keys (charger-photos/{ownerId}/{uuid}.ext) — never a raw URL, bucket is private; see PhotosService
   createdAt         DateTime        @default(now())
   removedAt         DateTime? // soft delete
 

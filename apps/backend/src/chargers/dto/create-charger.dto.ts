@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
 import { CableType, ConnectionRoute } from "@prisma/client";
 
 export class CreateChargerDto {
@@ -61,4 +61,13 @@ export class CreateChargerDto {
   @IsOptional()
   @IsBoolean()
   available?: boolean;
+
+  // S3 object keys from PhotosService.createUploadUrl, not raw URLs or
+  // file bytes — the client uploads directly to S3 via a presigned PUT
+  // before ever calling this endpoint, then just references the key here.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsString({ each: true })
+  photos?: string[];
 }
