@@ -4,6 +4,7 @@ export interface Charger {
   initials: string;
   postcode: string;
   fullAddress?: string; // private — only revealed once a booking is confirmed and paid
+  listingName?: string; // host-chosen override; falls back to "{host}'s driveway" when unset
   title: string;
   power: string; // display string, e.g. "7.4kW"
   powerNum: number; // numeric kW, for calculations
@@ -18,7 +19,7 @@ export interface Charger {
   rating: number | null; // null = no sessions yet ("New listing")
   sessions: number;
   available: boolean; // whether the host currently accepts bookings on this charger
-  photos?: string[]; // up to 2, data URLs on web; local URIs from expo-image-picker on native
+  photos?: string[]; // up to 2 displayable image URLs (presigned S3 view URLs once persisted)
 }
 
 export type ListingNameMap = Record<number, string>;

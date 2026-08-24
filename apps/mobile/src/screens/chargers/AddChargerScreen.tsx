@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from "react-native";
 import { Lock } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -9,54 +9,62 @@ import { Chip, Toggle } from "@/components/Controls";
 import { CurrencyField } from "@/components/CurrencyField";
 import { PhotosField } from "@/components/PhotosField";
 import { useChargerStore, namesMatch } from "@/state/ChargerStoreContext";
+import { useAuth } from "@/state/AuthContext";
+import { createCharger } from "@/api/chargers";
+import { PhotoDraft } from "@/api/photos";
+import { ApiError } from "@/api/client";
 import { CHARGER_MODELS, ROUTE_NOTES } from "@/data/mockChargers";
 import { ChargerModelOption } from "@kelo/core";
 
 export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAdded: () => void }) {
   const { tokens } = useTheme();
-  const { hostIdentity, addCharger, siblingNames } = useChargerStore();
+  const { siblingNames } = useChargerStore();
+  const { user } = useAuth();
 
   const [model, setModel] = useState<ChargerModelOption | null>(null);
   const [postcode, setPostcode] = useState("");
   const [cableProvided, setCableProvided] = useState(true);
   const [name, setName] = useState("");
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [rate, setRate] = useState(0.3);
   const [idleRate, setIdleRate] = useState(0.15);
   const [overstayRate, setOverstayRate] = useState(1.0);
   const [noShowFee, setNoShowFee] = useState(3.0);
   const [hostCost, setHostCost] = useState<number | undefined>(undefined);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const canSubmit = !!model && postcode.trim().length > 0;
   const existingNames = siblingNames(null);
   const isDuplicate = name.trim() !== "" && existingNames.some((n) => namesMatch(n, name));
 
-  const submit = () => {
-    if (!model || !canSubmit) return;
-    addCharger(
-      {
-        host: hostIdentity.host,
-        initials: hostIdentity.initials,
+  const submit = async () => {
+    if (!model || !canSubmit || submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await createCharger({
         postcode: postcode.trim().toUpperCase(),
         title: model.title,
-        power: model.power,
-        powerNum: model.powerNum,
-        cable: cableProvided ? "Tethered cable" : "Bring your own cable",
+        powerKw: model.powerNum,
+        cable: cableProvided ? "TETHERED" : "BRING_YOUR_OWN",
         connector: "Type 2",
+        listingName: name.trim() || undefined,
         rate,
         idleRate,
         overstayRate,
         noShowFee,
         hostCost,
-        photos,
-        distance: "0.3 mi",
-        rating: null,
-        sessions: 0,
+        connectionRoute: model.route === "ocpp" ? "OCPP" : "ENODE",
         available: true,
-      },
-      name.trim()
-    );
-    onAdded();
+        photos: photos.map((p) => p.key),
+      });
+      onAdded();
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.message : "Couldn't list this charger — try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -96,7 +104,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         <TextInput
           value={postcode}
           onChangeText={setPostcode}
-          placeholder="e.g. SM5"
+          placeholder="e.g. SM5 2QT"
           placeholderTextColor={tokens.textSoft}
           maxLength={8}
           autoCapitalize="characters"
@@ -120,7 +128,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder={hostIdentity.host ? `${hostIdentity.host}'s driveway` : "e.g. Garage charger"}
+          placeholder={user?.name ? `${user.name}'s driveway` : "e.g. Garage charger"}
           placeholderTextColor={tokens.textSoft}
           maxLength={40}
           style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13.5, color: tokens.text, marginBottom: 8 }}
@@ -196,8 +204,14 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         />
       </ScrollView>
 
+      {submitError && (
+        <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", paddingHorizontal: 20, marginBottom: 8 }}>{submitError}</Text>
+      )}
+
       <View style={{ padding: 20, paddingBottom: 28, borderTopWidth: 1, borderTopColor: tokens.hair, backgroundColor: tokens.ink }}>
-        <PrimaryButton onPress={submit} disabled={!canSubmit}>List this charger</PrimaryButton>
+        <PrimaryButton onPress={submit} disabled={!canSubmit || submitting}>
+          {submitting ? <ActivityIndicator color={tokens.onAccent} /> : "List this charger"}
+        </PrimaryButton>
         {!canSubmit && (
           <Text style={{ marginTop: 10, fontSize: 11.5, color: tokens.textSoft, textAlign: "center" }}>
             Pick a charger model and add your postcode to continue.

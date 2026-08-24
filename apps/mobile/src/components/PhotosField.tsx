@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, Image, Linking } from "react-native";
+import { View, Text, Pressable, Image, Linking, ActivityIndicator } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, X, TriangleAlert } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
+import { uploadPhoto, PhotoDraft } from "@/api/photos";
 
 const MAX_CHARGER_PHOTOS = 2;
 
-export function PhotosField({ photos, onChange }: { photos: string[]; onChange: (photos: string[]) => void }) {
+export function PhotosField({ photos, onChange }: { photos: PhotoDraft[]; onChange: (photos: PhotoDraft[]) => void }) {
   const { tokens } = useTheme();
   // null = no permission problem to report. Distinguishing the two denial
   // states matters: once canAskAgain is false, calling
@@ -15,6 +16,8 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
   // the only way forward is the OS Settings screen, so the message and
   // action shown have to differ from a simple "tap try again" case.
   const [permissionIssue, setPermissionIssue] = useState<"retry" | "settings" | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const pickPhoto = async (index: number) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -23,6 +26,7 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
       return;
     }
     setPermissionIssue(null);
+    setUploadError(null);
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.7,
@@ -30,9 +34,19 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
       allowsEditing: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
-    const next = [...photos];
-    next[index] = result.assets[0].uri;
-    onChange(next.slice(0, MAX_CHARGER_PHOTOS));
+
+    setUploadingIndex(index);
+    try {
+      const asset = result.assets[0];
+      const draft = await uploadPhoto(asset.uri, asset.mimeType ?? "image/jpeg");
+      const next = [...photos];
+      next[index] = draft;
+      onChange(next.slice(0, MAX_CHARGER_PHOTOS));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Couldn't upload that photo — try again.");
+    } finally {
+      setUploadingIndex(null);
+    }
   };
 
   const removePhoto = (index: number) => onChange(photos.filter((_, i) => i !== index));
@@ -43,6 +57,7 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
       <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
         {[0, 1].map((i) => {
           const photo = photos[i];
+          const uploading = uploadingIndex === i;
           return (
             <View
               key={i}
@@ -52,9 +67,13 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
                 borderWidth: 1, borderColor: tokens.hair, borderStyle: photo ? "solid" : "dashed",
               }}
             >
-              {photo ? (
+              {uploading ? (
+                <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+                  <ActivityIndicator color={tokens.cyan} />
+                </View>
+              ) : photo ? (
                 <>
-                  <Image source={{ uri: photo }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                  <Image source={{ uri: photo.previewUrl }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
                   <Pressable
                     onPress={() => removePhoto(i)}
                     style={{ position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(18,22,28,0.72)", alignItems: "center", justifyContent: "center" }}
@@ -72,6 +91,13 @@ export function PhotosField({ photos, onChange }: { photos: string[]; onChange: 
           );
         })}
       </View>
+
+      {uploadError && (
+        <View style={{ flexDirection: "row", gap: 8, backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.md, padding: 12, marginBottom: 8 }}>
+          <TriangleAlert size={14} color={tokens.danger} style={{ marginTop: 1 }} />
+          <Text style={{ flex: 1, fontSize: 12, color: tokens.text, lineHeight: 17 }}>{uploadError}</Text>
+        </View>
+      )}
 
       {permissionIssue && (
         <View style={{ flexDirection: "row", gap: 8, backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.md, padding: 12, marginBottom: 8 }}>

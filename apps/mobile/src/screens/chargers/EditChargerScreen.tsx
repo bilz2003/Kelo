@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, TextInput, Pressable } from "react-native";
+import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from "react-native";
 import { Lock } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -10,27 +10,71 @@ import { CurrencyField } from "@/components/CurrencyField";
 import { PhotosField } from "@/components/PhotosField";
 import { useChargerStore, namesMatch } from "@/state/ChargerStoreContext";
 import { defaultListingName } from "@/data/mockChargers";
-import { Charger } from "@kelo/core";
+import { toApiCable, ChargerWriteFields } from "@/api/chargers";
+import { PhotoDraft } from "@/api/photos";
+import { ApiError } from "@/api/client";
 
 export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; onBack: () => void }) {
   const { tokens } = useTheme();
-  const { myChargers, nameFor, setNameFor, updateCharger, removeCharger, siblingNames } = useChargerStore();
+  const { myChargers, nameFor, updateCharger, removeCharger, siblingNames } = useChargerStore();
   const charger = myChargers.find((c) => c.id === chargerId);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  // Local draft, committed on blur — a plain TextInput fires onChangeText
+  // per keystroke, and patching the backend that often would be a lot of
+  // noise for one field; CurrencyField already does its own version of
+  // this internally for the numeric fields below.
+  const [draftName, setDraftName] = useState(() => (charger ? nameFor(charger) : ""));
 
   // Defensive: navigates back automatically if the charger disappears out
-  // from under this screen (e.g. removed). Effect rather than a render-phase
-  // call, since calling onBack() during render would update the parent's
-  // state while this component is still rendering.
+  // from under this screen — including the real case now, right after a
+  // successful remove (removeCharger drops it from myChargers on success).
+  // Effect rather than a render-phase call, since calling onBack() during
+  // render would update the parent's state while this component is still
+  // rendering.
   useEffect(() => {
     if (!charger) onBack();
   }, [charger]);
 
   if (!charger) return null;
 
-  const name = nameFor(charger);
-  const isDuplicate = name.trim() !== "" && siblingNames(charger.id).some((n) => namesMatch(n, name));
-  const onChargerChange = (patch: Partial<Charger>) => updateCharger(charger.id, patch);
+  const isDuplicate = draftName.trim() !== "" && siblingNames(charger.id).some((n) => namesMatch(n, draftName));
+
+  const onChargerChange = async (patch: Partial<ChargerWriteFields>) => {
+    setFieldError(null);
+    try {
+      await updateCharger(charger.id, patch);
+    } catch (err) {
+      setFieldError(err instanceof ApiError ? err.message : "Couldn't save that change — try again.");
+    }
+  };
+
+  const commitName = () => {
+    const trimmed = draftName.trim();
+    const current = nameFor(charger);
+    if (trimmed === current) return;
+    onChargerChange({ listingName: trimmed || undefined });
+  };
+
+  const photoDrafts: PhotoDraft[] = charger.photoKeys.map((key, i) => ({ key, previewUrl: charger.photos?.[i] ?? "" }));
+  const onPhotosChange = (next: PhotoDraft[]) => {
+    onChargerChange({ photos: next.map((p) => p.key) });
+  };
+
+  const remove = async () => {
+    setRemoveError(null);
+    setRemoving(true);
+    try {
+      await removeCharger(charger.id);
+      // onBack() fires from the effect above once `charger` disappears
+      // from myChargers — nothing else to do here on success.
+    } catch (err) {
+      setRemoveError(err instanceof ApiError ? err.message : "Couldn't remove this charger — try again.");
+      setRemoving(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink, paddingTop: 54 }}>
@@ -38,12 +82,17 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
         <Text style={{ fontSize: 13, color: tokens.textSoft, marginBottom: 20 }}>{charger.title} · {charger.power}</Text>
 
+        {fieldError && (
+          <Text style={{ fontSize: 12, color: tokens.danger, marginBottom: 14 }}>{fieldError}</Text>
+        )}
+
         <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>Listing</Text>
         <View style={{ marginBottom: 18 }}>
           <Text style={{ marginBottom: 8, fontSize: 10.5, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6, fontFamily: fonts.mono }}>Listing name</Text>
           <TextInput
-            value={name}
-            onChangeText={(v) => setNameFor(charger.id, v)}
+            value={draftName}
+            onChangeText={setDraftName}
+            onBlur={commitName}
             placeholder={defaultListingName(charger)}
             placeholderTextColor={tokens.textSoft}
             maxLength={40}
@@ -60,7 +109,7 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
           )}
         </View>
 
-        <PhotosField photos={charger.photos || []} onChange={(photos) => onChargerChange({ photos })} />
+        <PhotosField photos={photoDrafts} onChange={onPhotosChange} />
 
         <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 16, marginBottom: 24, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View style={{ flex: 1 }}>
@@ -71,7 +120,7 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
           </View>
           <Toggle
             on={charger.cable === "Tethered cable"}
-            onToggle={() => onChargerChange({ cable: charger.cable === "Tethered cable" ? "Bring your own cable" : "Tethered cable" })}
+            onToggle={() => onChargerChange({ cable: toApiCable(charger.cable === "Tethered cable" ? "Bring your own cable" : "Tethered cable") })}
           />
         </View>
 
@@ -139,18 +188,22 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
         ) : (
           <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.lg, padding: 16 }}>
             <Text style={{ fontSize: 12.5, color: tokens.textSoft, lineHeight: 18, marginBottom: 14 }}>
-              Remove <Text style={{ color: tokens.text }}>{name}</Text>? It'll disappear from Discover immediately and this can't be undone. Any upcoming bookings on it will be cancelled automatically, free of charge to the driver.
+              Remove <Text style={{ color: tokens.text }}>{draftName || defaultListingName(charger)}</Text>? It'll disappear from Discover immediately and this can't be undone. Any upcoming bookings on it will be cancelled automatically, free of charge to the driver.
             </Text>
+            {removeError && (
+              <Text style={{ fontSize: 11.5, color: tokens.danger, marginBottom: 10 }}>{removeError}</Text>
+            )}
             <View style={{ flexDirection: "row", gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <GhostButton onPress={() => setConfirmingRemove(false)}>Cancel</GhostButton>
               </View>
               <View style={{ flex: 1 }}>
                 <Pressable
-                  onPress={() => removeCharger(charger.id)}
-                  style={{ width: "100%", paddingVertical: 14, paddingHorizontal: 20, borderRadius: radii.lg, alignItems: "center", backgroundColor: tokens.danger }}
+                  onPress={remove}
+                  disabled={removing}
+                  style={{ width: "100%", paddingVertical: 14, paddingHorizontal: 20, borderRadius: radii.lg, alignItems: "center", backgroundColor: tokens.danger, opacity: removing ? 0.6 : 1 }}
                 >
-                  <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 14, color: tokens.onAccent }}>Remove</Text>
+                  {removing ? <ActivityIndicator color={tokens.onAccent} /> : <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 14, color: tokens.onAccent }}>Remove</Text>}
                 </Pressable>
               </View>
             </View>
