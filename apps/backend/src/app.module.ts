@@ -14,6 +14,7 @@ import { BookingsModule } from "./bookings/bookings.module";
 import { SessionsModule } from "./sessions/sessions.module";
 import { ExtensionRequestsModule } from "./extension-requests/extension-requests.module";
 import { NoShowModule } from "./no-show/no-show.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { NoShowModule } from "./no-show/no-show.module";
     SessionsModule,
     ExtensionRequestsModule,
     NoShowModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -22,6 +22,13 @@ interface AuthContextValue {
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
+  // True only immediately after a login()/register() call in *this* app
+  // session succeeds — not on a restored session from stored tokens. Lets
+  // AppShell show the notification-permission prompt exactly once, right
+  // when there's a reason attached to it, not on every cold launch.
+  // AppShell calls clearJustAuthenticated() once it's shown the prompt.
+  justAuthenticated: boolean;
+  clearJustAuthenticated: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -30,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [justAuthenticated, setJustAuthenticated] = useState(false);
 
   // A refresh failure anywhere in the app (not just from a call this
   // provider made directly) means the session is over — apiFetch calls
@@ -70,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storeTokens(result.accessToken, result.refreshToken);
       setUser(result.user);
       setStatus("authenticated");
+      setJustAuthenticated(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
       throw err;
@@ -83,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storeTokens(result.accessToken, result.refreshToken);
       setUser(result.user);
       setStatus("authenticated");
+      setJustAuthenticated(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
       throw err;
@@ -99,12 +109,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearTokens();
     setUser(null);
     setStatus("unauthenticated");
+    setJustAuthenticated(false);
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
+  const clearJustAuthenticated = useCallback(() => setJustAuthenticated(false), []);
 
   return (
-    <AuthContext.Provider value={{ status, user, error, login, register, logout, clearError }}>
+    <AuthContext.Provider
+      value={{ status, user, error, login, register, logout, clearError, justAuthenticated, clearJustAuthenticated }}
+    >
       {children}
     </AuthContext.Provider>
   );

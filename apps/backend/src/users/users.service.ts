@@ -5,6 +5,16 @@ import { PrismaService } from "../prisma/prisma.service";
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Overwrites whatever token was there before — single-token-per-user by
+   * design (see the schema comment on User.pushToken), so registering a
+   * new one from a fresh login/reinstall is exactly how the old one gets
+   * replaced, not a bug to guard against.
+   */
+  async setPushToken(id: number, token: string): Promise<void> {
+    await this.prisma.user.update({ where: { id }, data: { pushToken: token } });
+  }
+
   async findPublicById(id: number) {
     const user = await this.prisma.user.findUnique({
       where: { id },

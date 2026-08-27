@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreenNative from "expo-splash-screen";
@@ -15,13 +15,22 @@ import { AuthProvider, useAuth } from "@/state/AuthContext";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { SplashScreen } from "@/screens/SplashScreen";
 import { AuthFlow } from "@/screens/auth/AuthFlow";
+import { NotificationPermissionScreen } from "@/screens/notifications/NotificationPermissionScreen";
+import { configureNotificationHandler } from "@/lib/pushNotifications";
+import { setUpNotificationDeepLinking } from "@/lib/notificationDeepLink";
 
 SplashScreenNative.preventAutoHideAsync().catch(() => {});
+configureNotificationHandler();
 
 function AppShell() {
   const { tokens, mode } = useTheme();
-  const { status } = useAuth();
+  const { status, justAuthenticated, clearJustAuthenticated } = useAuth();
   const [booted, setBooted] = useState(false);
+
+  // Registered once for the app's lifetime, not per-render/per-screen —
+  // handles both a tap while the app's already running and a cold start
+  // caused by the tap itself.
+  useEffect(() => setUpNotificationDeepLinking(), []);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink }}>
@@ -30,6 +39,8 @@ function AppShell() {
         <SplashScreen onDone={() => setBooted(true)} />
       ) : status === "loading" ? (
         <View style={{ flex: 1, backgroundColor: tokens.ink }} />
+      ) : status === "authenticated" && justAuthenticated ? (
+        <NotificationPermissionScreen onDone={clearJustAuthenticated} />
       ) : status === "authenticated" ? (
         <RootNavigator />
       ) : (

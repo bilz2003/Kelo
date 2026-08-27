@@ -63,6 +63,12 @@ model User {
   phone                  String?
   stripeCustomerId       String?
   stripeConnectAccountId String?
+  // Single Expo push token per user — one device at a time, not a
+  // per-device list. Reasonable default for this pass: nobody's signed in
+  // on two devices simultaneously yet, and a list would need eviction/
+  // staleness handling this app has no other use for right now. Worth
+  // revisiting if multi-device turns out to matter.
+  pushToken              String?
   createdAt              DateTime @default(now())
 
   chargers      Charger[]

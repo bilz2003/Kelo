@@ -1,9 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { BookingStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { PUBLIC_CHARGER_SELECT } from "../chargers/chargers.service";
 import { PhotosService } from "../photos/photos.service";
 import { CreateBookingDto } from "./dto/create-booking.dto";
+import { BookingCreatedEvent } from "./booking-created.event";
 
 // The driver on a booking gets the charger's real fullAddress (that's the
 // whole point of a booking) but never hostCost — that stays private to the
@@ -16,6 +18,7 @@ export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly photos: PhotosService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async create(driverId: number, dto: CreateBookingDto) {
@@ -30,7 +33,7 @@ export class BookingsService {
     const endAt = new Date(dto.endAt);
     await this.assertNoConflict(dto.chargerId, arrivalAt, endAt);
 
-    return this.prisma.booking.create({
+    const booking = await this.prisma.booking.create({
       data: {
         driverId,
         chargerId: dto.chargerId,
@@ -38,6 +41,11 @@ export class BookingsService {
         endAt,
       },
     });
+
+    const event: BookingCreatedEvent = { bookingId: booking.id, chargerId: booking.chargerId };
+    this.events.emit("booking.created", event);
+
+    return booking;
   }
 
   /**

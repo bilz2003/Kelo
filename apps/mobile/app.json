@@ -16,7 +16,10 @@
       "package": "com.kelo.app",
       "adaptiveIcon": {
         "backgroundColor": "#12161C"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -25,7 +28,14 @@
           "photosPermission": "Kelo uses your photos to let you add pictures of your charger listing."
         }
       ],
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4e5d7919-9c2d-490c-984e-a63b6ab6804c"
+      }
+    },
+    "owner": "validly"
   }
 }

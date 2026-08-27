@@ -23,5 +23,10 @@ export type RootTabParamList = {
 // driver was on), so it lives at the root stack level, not inside a tab.
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<RootTabParamList>;
-  ActiveSession: { charger: Charger };
+  // Optional: ActiveSessionScreen actually reads session.charger from
+  // SessionContext, not this param (kept for the type signature) — a
+  // notification-tap deep link into a session already ended (so there's
+  // no charger object handy, just session.lastReceipt) has nothing to
+  // pass here.
+  ActiveSession: { charger?: Charger };
 };

@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, Pressable } from "react-native";
-import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
+import { DefaultTheme, NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Compass, Calendar, PlugZap, User, ChevronUp } from "lucide-react-native";
@@ -9,6 +9,7 @@ import { fonts, radii } from "@/theme/tokens";
 import { PulseDot } from "@/components/Controls";
 import { useSession } from "@/state/SessionContext";
 import { RootStackParamList, RootTabParamList, DiscoverStackParamList } from "./types";
+import { navigationRef } from "./navigationRef";
 
 import { DiscoverListScreen } from "@/screens/discover/DiscoverListScreen";
 import { ChargerDetailScreen } from "@/screens/discover/ChargerDetailScreen";
@@ -77,7 +78,7 @@ function Tabs() {
  * Rendered as a sibling of the root stack (not inside a Screen), so it
  * needs the container ref rather than useNavigation().
  */
-function MinimizedSessionBanner({ navigationRef }: { navigationRef: ReturnType<typeof useNavigationContainerRef<RootStackParamList>> }) {
+function MinimizedSessionBanner() {
   const { tokens } = useTheme();
   const session = useSession();
   // 78 matches Tabs' tabBarStyle.height above; 28 matches the fixed
@@ -125,7 +126,6 @@ function MinimizedSessionBanner({ navigationRef }: { navigationRef: ReturnType<t
 
 export function RootNavigator() {
   const { mode, tokens } = useTheme();
-  const navigationRef = useNavigationContainerRef<RootStackParamList>();
   return (
     <NavigationContainer
       ref={navigationRef}
@@ -151,7 +151,7 @@ export function RootNavigator() {
             options={{ presentation: "modal", gestureEnabled: false, animation: "slide_from_bottom" }}
           />
         </RootStack.Navigator>
-        <MinimizedSessionBanner navigationRef={navigationRef} />
+        <MinimizedSessionBanner />
       </View>
     </NavigationContainer>
   );
