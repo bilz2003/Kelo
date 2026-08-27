@@ -46,3 +46,22 @@ export interface BookingDetail {
 export function getBookingDetail(id: number): Promise<BookingDetail> {
   return apiFetch(`/bookings/${id}`);
 }
+
+/** Every booking the signed-in driver has ever made, most recent first — same shape as getBookingDetail, just a list. */
+export function getMyBookings(): Promise<BookingDetail[]> {
+  return apiFetch("/bookings");
+}
+
+export interface CancelBookingResult {
+  free: boolean;
+  feeCharged: number;
+}
+
+/**
+ * Driver-only, own booking — a 409 means it can no longer be cancelled
+ * (already resolved, or a session's already started on it); a 404 means
+ * not found or not yours, same non-distinction as getBookingDetail.
+ */
+export function cancelBooking(id: number): Promise<CancelBookingResult> {
+  return apiFetch(`/bookings/${id}/cancel`, { method: "POST" });
+}

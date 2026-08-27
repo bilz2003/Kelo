@@ -47,6 +47,7 @@ enum TransactionType {
   OVERSTAY
   SERVICE_CHARGE
   NO_SHOW_FEE
+  CANCELLATION_FEE
 }
 
 enum ExtensionRequestStatus {

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { BookingStatus } from "@prisma/client";
+import { BookingStatus, TransactionType } from "@prisma/client";
+import { FREE_CANCELLATION_WINDOW_HOURS } from "@kelo/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { PUBLIC_CHARGER_SELECT } from "../chargers/chargers.service";
 import { PhotosService } from "../photos/photos.service";
@@ -141,5 +142,52 @@ export class BookingsService {
       throw new NotFoundException("Booking not found");
     }
     return { ...booking, charger: await this.photos.resolveCharger(booking.charger) };
+  }
+
+  /**
+   * Driver-only, own booking, scoped in the query itself same as
+   * findOneForDriver above — not found and not yours both 404 the same
+   * way. Rejected once a session exists (booking.session truthy) — by
+   * that point status is already ACTIVE/COMPLETED, so the status !==
+   * UPCOMING check below already covers it in practice, but checking
+   * session directly too is the more literal, harder-to-accidentally-
+   * break version of "you can't cancel something that's already
+   * charging." Free strictly more than FREE_CANCELLATION_WINDOW_HOURS
+   * before arrival; otherwise the charger's own noShowFee applies, same
+   * Transaction shape (0% commission, all to the host) as an actual
+   * no-show — a late cancellation and a silent no-show cost the host the
+   * same reserved-but-unused time either way.
+   */
+  async cancel(driverId: number, id: number) {
+    const booking = await this.prisma.booking.findFirst({
+      where: { id, driverId },
+      include: { charger: true, session: true },
+    });
+    if (!booking) {
+      throw new NotFoundException("Booking not found");
+    }
+    if (booking.status !== BookingStatus.UPCOMING || booking.session) {
+      throw new ConflictException("This booking can no longer be cancelled");
+    }
+
+    const hoursUntilArrival = (booking.arrivalAt.getTime() - Date.now()) / 3600_000;
+    const free = hoursUntilArrival > FREE_CANCELLATION_WINDOW_HOURS;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({ where: { id }, data: { status: BookingStatus.CANCELLED } });
+      if (!free) {
+        await tx.transaction.create({
+          data: {
+            bookingId: id,
+            type: TransactionType.CANCELLATION_FEE,
+            grossAmount: booking.charger.noShowFee,
+            commissionAmount: 0,
+            hostNetAmount: booking.charger.noShowFee,
+          },
+        });
+      }
+    });
+
+    return { free, feeCharged: free ? 0 : booking.charger.noShowFee };
   }
 }

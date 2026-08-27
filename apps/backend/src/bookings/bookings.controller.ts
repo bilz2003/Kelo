@@ -30,4 +30,9 @@ export class BookingsController {
   findOne(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
     return this.bookingsService.findOneForDriver(user.userId, id);
   }
+
+  @Post(":id/cancel")
+  cancel(@CurrentUser() user: RequestUser, @Param("id", ParseIntPipe) id: number) {
+    return this.bookingsService.cancel(user.userId, id);
+  }
 }

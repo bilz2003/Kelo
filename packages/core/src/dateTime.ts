@@ -8,6 +8,7 @@ export const NOW = new Date(2026, 7, 2, 14, 32);
 export const MIN_BOOKING_HOURS = 1;
 export const MAX_BOOKING_HOURS = 24; // cap on how far "done by" can extend past arrival
 export const MAX_ADVANCE_DAYS = 90; // how far ahead a driver can book an arrival date
+export const FREE_CANCELLATION_WINDOW_HOURS = 2; // cancelling less than this far before arrival incurs the charger's noShowFee
 
 export const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
