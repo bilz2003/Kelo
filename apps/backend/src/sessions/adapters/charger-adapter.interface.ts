@@ -16,5 +16,3 @@ export interface ChargerAdapter {
   /** Current meter reading for whatever session is active on this charger, if any. */
   getMeterValue(chargerId: number): Promise<MeterState | null>;
 }
-
-export const CHARGER_ADAPTER = Symbol("CHARGER_ADAPTER");

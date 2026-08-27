@@ -1,10 +1,10 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { BookingStatus, SessionEndedReason, TransactionType } from "@prisma/client";
 import { computeSessionFinancials, ENERGY_COMMISSION, IDLE_COMMISSION, OVERSTAY_COMMISSION } from "@kelo/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { ExtensionRequestsService } from "../extension-requests/extension-requests.service";
-import { CHARGER_ADAPTER, ChargerAdapter } from "./adapters/charger-adapter.interface";
+import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
 import { toCoreCharger } from "./charger-mapping";
 import { computeMockMeterState } from "./mock-meter";
 import { SessionEndedEvent } from "./session-ended.event";
@@ -15,7 +15,7 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
     private readonly extensionRequests: ExtensionRequestsService,
-    @Inject(CHARGER_ADAPTER) private readonly chargerAdapter: ChargerAdapter,
+    private readonly adapters: ChargerAdapterRegistry,
   ) {}
 
   async startSession(bookingId: number, driverId: number) {
@@ -30,16 +30,25 @@ export class SessionsService {
       throw new ConflictException("This booking already has a session");
     }
 
-    const session = await this.prisma.session.create({
-      data: {
-        bookingId: booking.id,
-        startedAt: new Date(),
-        meterStartKwh: 0,
-      },
-    });
-    await this.prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.ACTIVE } });
+    const adapter = this.adapters.forRoute(booking.charger.connectionRoute);
 
-    await this.chargerAdapter.authorize(session.id);
+    // Session row + ACTIVE status and the adapter's own authorize() call
+    // live in one transaction: if the charger refuses to start (a real
+    // rejection, or Enode's stub throwing "not configured"), everything
+    // rolls back — no orphaned Session row, no booking stuck ACTIVE with
+    // nothing actually running underneath it.
+    const session = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.session.create({
+        data: {
+          bookingId: booking.id,
+          startedAt: new Date(),
+          meterStartKwh: 0,
+        },
+      });
+      await tx.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.ACTIVE } });
+      await adapter.authorize(created.id);
+      return created;
+    });
 
     return { id: session.id, bookingId: session.bookingId, startedAt: session.startedAt };
   }
@@ -69,7 +78,7 @@ export class SessionsService {
     const { booking } = session;
     const { charger } = booking;
 
-    const { kwh, seconds } = await this.chargerAdapter.stop(sessionId);
+    const { kwh, seconds } = await this.adapters.forRoute(charger.connectionRoute).stop(sessionId);
     const bookingEndSeconds = (booking.endAt.getTime() - session.startedAt.getTime()) / 1000;
     const financials = computeSessionFinancials(toCoreCharger(charger), kwh, seconds, bookingEndSeconds);
 
