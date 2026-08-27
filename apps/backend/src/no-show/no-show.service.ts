@@ -1,8 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Interval } from "@nestjs/schedule";
 import { BookingStatus, TransactionType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { BookingNoShowEvent } from "./booking-no-show.event";
 
 // Checked every 30s — the default 20-minute grace only needs to be caught
 // within roughly that margin, and NO_SHOW_GRACE_MINUTES can be set to a
@@ -17,6 +19,7 @@ export class NoShowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly events: EventEmitter2,
   ) {}
 
   private graceMinutes(): number {
@@ -43,8 +46,8 @@ export class NoShowService {
     }
   }
 
-  private async markNoShow(booking: { id: number; charger: { noShowFee: number } }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  private async markNoShow(booking: { id: number; charger: { id: number; noShowFee: number } }): Promise<void> {
+    const wasMarked = await this.prisma.$transaction(async (tx) => {
       // Guards against a driver starting a session in the gap between the
       // sweep's read above and this write — updateMany's own where clause
       // is what actually matters for the race, not the findMany filter.
@@ -52,7 +55,7 @@ export class NoShowService {
         where: { id: booking.id, status: BookingStatus.UPCOMING },
         data: { status: BookingStatus.NO_SHOW },
       });
-      if (result.count === 0) return;
+      if (result.count === 0) return false;
 
       await tx.transaction.create({
         data: {
@@ -68,8 +71,13 @@ export class NoShowService {
           // so far (energy/idle/overstay), not a special case.
         },
       });
+      return true;
     });
+    if (!wasMarked) return;
 
     this.logger.log(`Booking ${booking.id} marked NO_SHOW; £${booking.charger.noShowFee.toFixed(2)} fee recorded (unprocessed).`);
+
+    const event: BookingNoShowEvent = { bookingId: booking.id, chargerId: booking.charger.id };
+    this.events.emit("booking.noshow", event);
   }
 }

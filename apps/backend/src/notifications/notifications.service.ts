@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ExtensionRequestEvent } from "../extension-requests/extension-request.event";
 import { SessionEndedEvent } from "../sessions/session-ended.event";
 import { BookingCreatedEvent } from "../bookings/booking-created.event";
+import { BookingNoShowEvent } from "../no-show/booking-no-show.event";
 
 interface PushPayload {
   title: string;
@@ -94,10 +95,25 @@ export class NotificationsService {
     });
   }
 
+  @OnEvent("booking.noshow")
+  async onBookingNoShow(payload: BookingNoShowEvent) {
+    const charger = await this.prisma.charger.findUnique({
+      where: { id: payload.chargerId },
+      select: { ownerId: true, title: true, noShowFee: true },
+    });
+    if (!charger) return;
+    await this.send(charger.ownerId, {
+      title: "Driver no-show",
+      body: `A driver didn't show up at ${charger.title} — £${charger.noShowFee.toFixed(2)} fee recorded.`,
+      data: { type: "no_show", bookingId: payload.bookingId },
+    });
+  }
+
   /**
-   * Public so a trigger that isn't a natural EventEmitter listener (or a
-   * fifth one added later) can call straight in without duplicating the
-   * token-lookup/no-op/send logic below.
+   * Public so a trigger that isn't a natural EventEmitter listener can
+   * call straight in without duplicating the token-lookup/no-op/send
+   * logic below — exactly what booking.noshow above turned out not to
+   * need, since it's a plain event listener like the rest.
    *
    * No registered token — never granted permission, or hasn't registered
    * yet — is a clean no-op, not an error: most users at any given moment
