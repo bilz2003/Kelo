@@ -6,7 +6,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ExtensionRequestsService } from "../extension-requests/extension-requests.service";
 import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
 import { toCoreCharger } from "./charger-mapping";
-import { computeMockMeterState } from "./mock-meter";
 import { SessionEndedEvent } from "./session-ended.event";
 
 @Injectable()
@@ -146,7 +145,19 @@ export class SessionsService {
     if (!session) return null;
 
     const charger = session.booking.charger;
-    const { kwh, seconds } = computeMockMeterState(charger.powerKw, session.startedAt);
+    // Was previously hardcoded to computeMockMeterState regardless of the
+    // charger's own connectionRoute — meaning a real (non-mock) session's
+    // live screen would have shown the mock's simulated curve instead of
+    // real adapter-sourced data. Route through the same registry every
+    // other adapter call goes through instead. If the adapter has no live
+    // reading for this charger right now (e.g. the mock's own in-memory
+    // tracking was lost to a backend restart since authorize() ran, or a
+    // real adapter's webhook-driven tracking hasn't received an update
+    // yet), fall back to zero kwh with real elapsed time rather than
+    // fabricating a number.
+    const live = await this.adapters.forRoute(charger.connectionRoute).getMeterValue(charger.id);
+    const { kwh, seconds } =
+      live ?? { kwh: 0, seconds: Math.max(0, Math.floor((Date.now() - session.startedAt.getTime()) / 1000)) };
     const pendingExtension = await this.extensionRequests.findPendingForBooking(session.bookingId);
     return {
       id: session.id,
