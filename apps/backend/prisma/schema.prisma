@@ -23,6 +23,7 @@ enum CableType {
 }
 
 enum ConnectionRoute {
+  MOCK // predictable fake meter ticks — see MockChargerAdapter. What every charger previously tagged OCPP actually ran on, before a real OCPP central system existed.
   OCPP
   ENODE
 }
@@ -114,7 +115,7 @@ model Charger {
   noShowFee         Float // £ flat
   hostCost          Float? // private — host's own £/kWh cost
   connectionRoute   ConnectionRoute
-  ocppChargePointId String? // set if connectionRoute = OCPP
+  ocppChargePointId String? // set if connectionRoute = OCPP — the identity a real charge point connects to OcppCentralSystem with (ws://.../{ocppChargePointId})
   enodeChargerId    String? // set if connectionRoute = ENODE — Enode's own charger id (GET/POST /chargers/{chargerId}), confirmed via their real API; not a vehicle id, despite this field's original name
   available         Boolean         @default(true)
   photoKeys         String[]        @default([]) // S3 object keys (charger-photos/{ownerId}/{uuid}.ext) — never a raw URL, bucket is private; see PhotosService

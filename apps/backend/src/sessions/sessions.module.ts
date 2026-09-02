@@ -8,6 +8,8 @@ import { MockChargerAdapter } from "./adapters/mock-charger-adapter";
 import { EnodeChargerAdapter } from "./adapters/enode-charger-adapter";
 import { EnodeClient } from "./adapters/enode-client";
 import { EnodeWebhookController } from "./adapters/enode-webhook.controller";
+import { OcppChargerAdapter } from "./adapters/ocpp-charger-adapter";
+import { OcppCentralSystem } from "./ocpp/ocpp-central-system";
 import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
 
 @Module({
@@ -19,10 +21,14 @@ import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
     MockChargerAdapter,
     EnodeChargerAdapter,
     EnodeClient,
-    // SessionsService depends on the registry, not on either adapter
+    OcppChargerAdapter,
+    // OnModuleInit here is what actually starts the OCPP WebSocket server
+    // (see OCPP-INTEGRATION.md) — a real long-lived listener, not just a
+    // request-scoped helper.
+    OcppCentralSystem,
+    // SessionsService depends on the registry, not on any adapter
     // directly — it looks one up per charger, by that charger's own
-    // connectionRoute. A real OCPP adapter replacing the mock, later,
-    // is a one-line change inside the registry, not here.
+    // connectionRoute.
     ChargerAdapterRegistry,
   ],
 })

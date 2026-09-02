@@ -1,12 +1,15 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { EventEmitter2 } from "@nestjs/event-emitter";
-import { BookingStatus, SessionEndedReason, TransactionType } from "@prisma/client";
+import { EventEmitter2, OnEvent } from "@nestjs/event-emitter";
+import { BookingStatus, Prisma, SessionEndedReason, TransactionType } from "@prisma/client";
 import { computeSessionFinancials, ENERGY_COMMISSION, IDLE_COMMISSION, OVERSTAY_COMMISSION } from "@kelo/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { ExtensionRequestsService } from "../extension-requests/extension-requests.service";
 import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
+import { MeterState } from "./adapters/charger-adapter.interface";
 import { toCoreCharger } from "./charger-mapping";
 import { SessionEndedEvent } from "./session-ended.event";
+
+type SessionWithBookingAndCharger = Prisma.SessionGetPayload<{ include: { booking: { include: { charger: true } } } }>;
 
 @Injectable()
 export class SessionsService {
@@ -62,19 +65,11 @@ export class SessionsService {
   }
 
   /**
-   * The ONLY way a session ends. There is deliberately no app-triggered
-   * "end session"/"release time" path — billing only stops when the
-   * charger itself reports the driver has unplugged, whether that's early,
-   * on time, or late. This mock endpoint stands in for that hardware
-   * signal (a real OCPP StopTransaction/StatusNotification, or Enode's
-   * equivalent) until real charger integration replaces the mock adapter —
-   * see sessions.controller.ts for where it's wired up.
-   *
-   * Runs identically regardless of timing — no early/on-time/late branches
-   * here. Whether idle or overstay actually accrued, and whether any
-   * booked time gets released, all fall out of the same
-   * computeSessionFinancials call plus a single "was there time left"
-   * check, not special-cased handling per scenario.
+   * The driver-triggered way a session ends: a backend-forced stop
+   * (mock's own endpoint standing in for a real hardware signal; a real
+   * Enode STOP command; or, for OCPP, RemoteStopTransaction). Fetches the
+   * adapter's own MeterState via .stop() first, then runs the one shared
+   * finalization path every route uses — see finalizeSession.
    */
   async simulateUnplug(sessionId: number, driverId: number): Promise<SessionEndedEvent> {
     const session = await this.findOwnedSession(sessionId, driverId);
@@ -82,11 +77,44 @@ export class SessionsService {
       throw new ConflictException("This session has already ended");
     }
 
+    const meterState = await this.adapters.forRoute(session.booking.charger.connectionRoute).stop(sessionId);
+    return this.finalizeSession(session, meterState);
+  }
+
+  /**
+   * The OTHER way a session ends: a real OCPP charge point sending an
+   * unsolicited StopTransaction — a genuine physical unplug it reported on
+   * its own, with no RemoteStopTransaction behind it and so no HTTP caller
+   * anywhere in the stack. OcppCentralSystem emits ocpp.stop.unsolicited
+   * for exactly this case; this is its only handler, and it runs through
+   * the exact same finalizeSession every other route (including a
+   * backend-forced OCPP stop, via simulateUnplug above) already uses —
+   * not a second, parallel finalization path.
+   */
+  @OnEvent("ocpp.stop.unsolicited")
+  async onOcppUnsolicitedStop(payload: { sessionId: number; meterState: MeterState }): Promise<void> {
+    const session = await this.prisma.session.findUnique({
+      where: { id: payload.sessionId },
+      include: { booking: { include: { charger: true } } },
+    });
+    if (!session || session.endedAt) return; // unknown, or already finalized elsewhere — nothing to do
+    await this.finalizeSession(session, payload.meterState);
+  }
+
+  /**
+   * The ONE place Session/Transaction rows actually get written to end a
+   * session, and the ONE place computeSessionFinancials gets called for
+   * that — every route (mock, Enode, OCPP; driver-triggered or
+   * charge-point-triggered) funnels through here with nothing but a
+   * MeterState, precisely so none of them can silently diverge on the
+   * pricing/idle/overstay rules.
+   */
+  private async finalizeSession(session: SessionWithBookingAndCharger, meterState: MeterState): Promise<SessionEndedEvent> {
+    const { kwh, seconds } = meterState;
     const now = new Date();
     const { booking } = session;
     const { charger } = booking;
 
-    const { kwh, seconds } = await this.adapters.forRoute(charger.connectionRoute).stop(sessionId);
     const bookingEndSeconds = (booking.endAt.getTime() - session.startedAt.getTime()) / 1000;
     const financials = computeSessionFinancials(toCoreCharger(charger), kwh, seconds, bookingEndSeconds);
 
@@ -94,7 +122,7 @@ export class SessionsService {
     const released = minutesReleased > 0;
 
     await this.prisma.session.update({
-      where: { id: sessionId },
+      where: { id: session.id },
       data: {
         meterEndKwh: kwh,
         endedAt: now,
@@ -118,7 +146,7 @@ export class SessionsService {
     }
 
     const payload: SessionEndedEvent = {
-      sessionId,
+      sessionId: session.id,
       bookingId: session.bookingId,
       kwh,
       seconds,
