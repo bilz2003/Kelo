@@ -1,113 +1,107 @@
-# Enode integration readiness
+# Enode integration
 
-This is a **structural readiness** pass, not a real integration. Nothing in
-this codebase makes a real network call to Enode. The goal was to make the
-eventual real integration a contained, one-place change instead of a rewrite
-— and to write down, from Enode's actual current docs, what that real change
-will need.
+`EnodeChargerAdapter` is a real integration against Enode's sandbox API —
+not a stub. It's never been exercised against a live virtual device end to
+end, though (see the Sandbox section below for exactly why), so treat the
+"what's verified" section as the honest boundary of what this actually
+proves.
 
-## What exists today
+## What's real here
 
-- `Charger.connectionRoute` (`OCPP` | `ENODE`) and `Charger.enodeVehicleId`
-  — [prisma/schema.prisma](apps/backend/prisma/schema.prisma) — already
-  existed before this pass.
-- [`ChargerAdapter`](apps/backend/src/sessions/adapters/charger-adapter.interface.ts)
-  — the interface every connection route implements: `authorize`, `stop`,
-  `getMeterValue`.
-- [`ChargerAdapterRegistry`](apps/backend/src/sessions/adapters/charger-adapter-registry.ts)
-  — picks the right adapter per session, by that session's own charger's
-  `connectionRoute`. `SessionsService` depends on the registry, not on a
-  fixed adapter — this is what used to be a single hardcoded
-  `CHARGER_ADAPTER` binding to the mock, regardless of route.
-- [`EnodeChargerAdapter`](apps/backend/src/sessions/adapters/enode-charger-adapter.ts)
-  — a stub. Every method throws a clear `ServiceUnavailableException`
-  ("Enode integration is not configured") immediately, rather than silently
-  behaving like the mock. A charger accidentally created with
-  `connectionRoute: ENODE` fails loudly at session start, not with a
-  confusing downstream error once something already looked like it worked.
-- `ENODE_CLIENT_ID`, `ENODE_CLIENT_SECRET`, `ENODE_API_BASE_URL` — env var
-  placeholders in `apps/backend/.env`, all unset/blank. Nothing reads them
-  yet.
-- `OCPP` still routes to `MockChargerAdapter`, exactly as it did before this
-  pass — there is no real OCPP central system in this codebase either, and
-  BACKEND-PLAN.md's own recommendation is to build against the mock first.
-  This pass changed nothing about OCPP-route behavior.
+- **OAuth2 client_credentials auth** ([`enode-client.ts`](apps/backend/src/sessions/adapters/enode-client.ts)):
+  real token exchange against `https://oauth.sandbox.enode.io/oauth2/token`,
+  cached in memory with a 60s expiry margin and only refetched once actually
+  expiring — confirmed via direct log evidence (a cache-miss fetch followed
+  by a cache-hit on the next call, no second network round trip). The
+  client secret and the token itself are never logged, anywhere.
+- **Charger control** ([`enode-charger-adapter.ts`](apps/backend/src/sessions/adapters/enode-charger-adapter.ts)):
+  `authorize`/`stop` call the real `POST /chargers/{chargerId}/charging`
+  with `{action: "START"}` / `{action: "STOP"}` — this body shape was
+  confirmed live (not guessed) by POSTing an empty body and reading back
+  Enode's own real validation error, which named exactly these two allowed
+  values. The endpoint is async — it returns an `Action` that settles to
+  `CONFIRMED`/`FAILED`/`CANCELLED` — so both methods poll
+  `GET /chargers/actions/{actionId}` (confirmed live: it 400s on a
+  non-UUID id exactly per its own validation) to a terminal state before
+  returning, matching `ChargerAdapter`'s synchronous contract.
+- **Energy accounting**: Enode's charger resource has no cumulative-kWh or
+  session-duration field — confirmed against Enode's own chargers OpenAPI
+  schema, which lists only `isPluggedIn`/`isCharging`/`chargeRate`/
+  `maxCurrent`/`powerDeliveryState`, nothing energy-cumulative. So unlike a
+  real OCPP StopTransaction (which just hands back a final reading), this
+  adapter integrates energy itself: it tracks the last known `chargeRate`
+  and when it was last updated, and every webhook-reported rate change
+  advances `accumulatedKwh` by rate × elapsed time before recording the new
+  rate. `getMeterValue`/`stop` project that forward to "now" using the most
+  recent rate. `SessionsService` still calls `computeSessionFinancials`
+  from `@kelo/core` exactly as it does for the mock adapter — this adapter
+  only ever returns a `MeterState {kwh, seconds}`, same as the interface
+  requires; no pricing logic lives here.
+- **Webhooks** ([`enode-webhook.controller.ts`](apps/backend/src/sessions/adapters/enode-webhook.controller.ts)):
+  `POST /webhooks/enode` verifies `x-enode-signature`
+  (`sha1={hex HMAC-SHA1 of the raw request body}`, constant-time compared)
+  before trusting anything in the payload, then dispatches
+  `user:charger:updated` events into the adapter's `onChargeStateUpdated`,
+  which feeds the same `session.tick` event the mock adapter's timer
+  already emits — real hardware-reported rate changes drive the exact same
+  downstream path (WebSocket gateway, live screens) the simulated curve
+  does today. Verified for real: a correctly-signed payload is accepted, a
+  tampered or missing signature is rejected with 403, and dispatching an
+  event for a charger with no actively-tracked session is a safe no-op.
+- **Registry wiring**: `ChargerAdapterRegistry` is unchanged — `ENODE`
+  already routed to `EnodeChargerAdapter`; that class just does real work
+  now instead of always throwing.
+- **`Charger.enodeChargerId`** (renamed from `enodeVehicleId`, which didn't
+  match what Enode's charger-control endpoints actually key off — they
+  address a charger by its own `chargerId`, not a vehicle id). A charger
+  with `connectionRoute: ENODE` and no `enodeChargerId` set fails fast with
+  a clear 400 before any network call — it's never been linked to a real
+  device.
 
-## What real implementation will actually require
+## Sandbox: virtual device provisioning is a real, unresolved gap
 
-Verified live against Enode's current developer docs
-(developers.enode.com) while writing this doc — not from training-data
-memory, since API surfaces like this move. Re-verify before writing real
-code against any of it; a few paths below could not be confirmed at all
-(see the explicit gap at the end).
+Before writing any of the above, connectivity was confirmed first, per the
+task: a real `client_credentials` token exchange against
+`https://oauth.sandbox.enode.io/oauth2/token` succeeded (HTTP 200, a real
+access token). `GET /chargers`, `/vehicles`, and `/users` on that sandbox
+client all returned empty, though — no virtual device exists to test
+against.
 
-### Auth: OAuth2 client credentials
+Checked directly against Enode's own current docs (not assumed): creating
+a sandbox virtual device is **dashboard-only**. Their own getting-started
+guide states plainly: *"In sandbox, you must first create a virtual
+asset"*, done through their customer dashboard (Assets → Create new → pick
+vendor/model) — there is no documented API endpoint for this step. Two
+independent doc fetches confirmed the same thing; nothing suggests a
+backend-only path exists. This is exactly the same class of gap as the
+push-notification Simulator limitation elsewhere in this project: a real,
+stated boundary, not one papered over.
 
-- Sandbox API base: `https://enode-api.sandbox.enode.io`
-- Production API base: `https://enode-api.production.enode.io`
-- Token endpoint (sandbox): `https://oauth.sandbox.enode.io/oauth2/token`
-- Request: `POST`, HTTP Basic auth (`-u {CLIENT_ID}:{CLIENT_SECRET}`), body
-  `grant_type=client_credentials`
-- Tokens are short-lived (~3599s / ~1 hour) — a real adapter needs its own
-  token cache/refresh, not a fetch-per-request.
+**Consequence**: every endpoint this adapter calls has been confirmed
+against the real API (real 200 token exchange; real 400 validation errors
+naming the exact allowed `action` values; real 400 UUID validation on the
+actions endpoint; a real 404 "Charger not found" correctly propagated end
+to end through a booking → session-start call when pointed at a
+syntactically-valid-but-nonexistent device id) — but the full path of
+"start a real virtual charger, have it report a real `chargeRate` via a
+real webhook, watch that accumulate into a real Session/Transaction" has
+not been exercised, because no virtual device exists to start. Provisioning
+one requires a human going into the Enode dashboard; that hasn't happened
+yet. Once it has, this adapter should work against it as written — the
+gap is entirely in test-fixture availability, not unverified code paths.
 
-### Linking a user's vehicle/charger
+**Also unresolved**: real webhook delivery has not been tested, because
+Enode's webhook subscription (`POST /webhooks`) needs a publicly reachable
+URL, which this local dev environment doesn't have. The receiver's own
+logic (signature verification, event parsing, safe-ignore of untracked
+chargers) is independently verified and real; an actual delivery from
+Enode to this endpoint is not.
 
-- `POST /users/{userId}/link` returns a `linkUrl` — Enode's own hosted flow
-  for the account owner to connect their vendor account. Request specifies
-  a `vendorType` (`vehicle` | `charger` | `HVAC` | `solar`) and scopes.
-- `GET /users/{userId}` fetches what's currently linked for that user.
-- This is the piece `Charger.enodeVehicleId` is presumably meant to store
-  the result of — nothing currently populates it; there's no linking flow
-  in this codebase yet either.
+## Production
 
-### Webhooks (how Enode reports real charging-state changes)
-
-- Enode delivers state changes as an HTTPS `POST` to a subscribed URL —
-  not a polling model. Payload is a JSON array of up to 100 events per
-  delivery, each shaped roughly `{ event, createdAt, version, ...}`.
-- Headers `x-enode-delivery` (delivery id) and `x-enode-signature`
-  (`sha1={hex HMAC-SHA1 of the raw JSON body}`, secret ≥128 bits) —
-  a real adapter's webhook receiver must verify this signature over the
-  *raw* body before trusting anything in it.
-- Subscriptions are created via a "Create Webhook" endpoint (not
-  independently re-verified below — see the gap section).
-- This is the natural real source for `getMeterValue`/session-end
-  detection with a real charger, replacing `simulateUnplug`'s mock
-  "driver taps a button" signal in `SessionsService` with an actual
-  hardware-reported event.
-
-### Charger-specific control endpoints — NOT verified
-
-Attempts to independently confirm the actual charger get/start/stop
-charging-session endpoints
-(`developers.enode.com/reference/getcharger`, `/reference`, and
-`/docs/chargers`) all returned 404 during this pass — most likely because
-Enode's reference pages are JS-rendered and weren't reachable as static
-HTML from here, not necessarily that the endpoints don't exist. **Do not
-trust any endpoint path for actual charger control (starting/stopping a
-charge session, reading a live meter value) without re-confirming directly
-against Enode's dashboard/reference docs while logged in, or against their
-OpenAPI spec if they publish one.** This is the one piece of this doc that
-is a known gap rather than a verified fact.
-
-## What "real" implementation means, concretely
-
-1. `EnodeChargerAdapter` gets a real HTTP client, reads
-   `ENODE_CLIENT_ID`/`ENODE_CLIENT_SECRET`/`ENODE_API_BASE_URL`, and
-   implements the OAuth2 client-credentials token exchange with caching.
-2. A real linking flow (`POST /users/{userId}/link`) somewhere in the host
-   onboarding/charger-creation UI, storing the result in
-   `enodeVehicleId` (or a renamed field, if Enode's model turns out to key
-   off charger id rather than vehicle id — needs checking once the
-   charger-control endpoints are confirmed).
-3. `authorize`/`stop`/`getMeterValue` call the real (currently unverified)
-   charger-control endpoints instead of throwing.
-4. A webhook receiver endpoint, registered as an Enode webhook subscription,
-   verifying `x-enode-signature` and feeding real state changes into the
-   same `session.ended`/meter-tick path `simulateUnplug` and
-   `computeMockMeterState` currently serve for the mock.
-5. `ChargerAdapterRegistry` needs no changes at that point — it already
-   routes `ENODE` to whichever class implements `EnodeChargerAdapter`.
-
-None of the above exists yet. This pass is scaffolding, not integration.
+No production access yet — real hardware requires going through Enode's
+sales process separately from sandbox API access. `ENODE_API_BASE_URL`
+would change to `https://enode-api.production.enode.io` (and the OAuth
+host follows automatically, since `EnodeClient` derives it from the API
+base rather than a second env var) once that's in place; nothing else
+about this adapter is sandbox-specific.

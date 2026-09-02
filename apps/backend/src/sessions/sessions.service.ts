@@ -32,23 +32,32 @@ export class SessionsService {
 
     const adapter = this.adapters.forRoute(booking.charger.connectionRoute);
 
-    // Session row + ACTIVE status and the adapter's own authorize() call
-    // live in one transaction: if the charger refuses to start (a real
-    // rejection, or Enode's stub throwing "not configured"), everything
-    // rolls back — no orphaned Session row, no booking stuck ACTIVE with
-    // nothing actually running underneath it.
-    const session = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.session.create({
-        data: {
-          bookingId: booking.id,
-          startedAt: new Date(),
-          meterStartKwh: 0,
-        },
-      });
-      await tx.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.ACTIVE } });
-      await adapter.authorize(created.id);
-      return created;
+    const session = await this.prisma.session.create({
+      data: {
+        bookingId: booking.id,
+        startedAt: new Date(),
+        meterStartKwh: 0,
+      },
     });
+    await this.prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.ACTIVE } });
+
+    try {
+      await adapter.authorize(session.id);
+    } catch (err) {
+      // The charger refused to start (a real rejection, Enode's stub
+      // throwing "not configured", or a real Enode call failing) — undo
+      // the two writes above by hand rather than wrapping them in a DB
+      // transaction together with authorize(): every adapter re-queries
+      // the session by id internally (EnodeChargerAdapter does, to reach
+      // its booking/charger), and inside an open transaction that row
+      // isn't visible yet to a query running outside that same
+      // transaction — it isn't committed. Compensating here instead
+      // avoids that trap while still leaving no orphaned Session row and
+      // no booking stuck ACTIVE with nothing actually running.
+      await this.prisma.session.delete({ where: { id: session.id } });
+      await this.prisma.booking.update({ where: { id: booking.id }, data: { status: booking.status } });
+      throw err;
+    }
 
     return { id: session.id, bookingId: session.bookingId, startedAt: session.startedAt };
   }

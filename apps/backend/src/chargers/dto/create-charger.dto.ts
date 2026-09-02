@@ -56,7 +56,7 @@ export class CreateChargerDto {
 
   @IsOptional()
   @IsString()
-  enodeVehicleId?: string;
+  enodeChargerId?: string;
 
   @IsOptional()
   @IsBoolean()
