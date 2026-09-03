@@ -29,7 +29,15 @@
         }
       ],
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Kelo uses your location to show how far away chargers are and sort Discover by distance.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
-import { Search, SlidersHorizontal, MapPin, ChevronRight, TriangleAlert } from "lucide-react-native";
+import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, Linking, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
+import { Search, SlidersHorizontal, MapPin, ChevronRight, TriangleAlert, X } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -10,6 +10,7 @@ import { DiscoverMap } from "@/components/DiscoverMap";
 import { SheetHandle } from "@/components/SheetHandle";
 import { useSlideSheet } from "@/components/useSlideSheet";
 import { useChargerStore } from "@/state/ChargerStoreContext";
+import { getForegroundLocation, shouldShowApproxDistanceNotice } from "@/lib/location";
 import { DiscoverStackParamList } from "@/navigation/types";
 import { Charger } from "@kelo/core";
 
@@ -61,13 +62,74 @@ export function DiscoverListScreen({ navigation }: Props) {
   const { translateY: sheetTranslateY, backdropOpacity, animateOut, springBack } = useSlideSheet(!!mapPinSelected);
   const closeSheet = () => animateOut(() => setMapPinSelected(null));
 
+  // undefined = still resolving location (first mount only); null = no
+  // real coords available (denied/error — backend falls back to its own
+  // fixed reference point); otherwise the driver's real device location.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null | undefined>(undefined);
+  const [approxNotice, setApproxNotice] = useState(false);
+  const [locationDenialKind, setLocationDenialKind] = useState<"retry" | "settings" | null>(null);
+
+  // Requested contextually here — the first time Discover/Map is actually
+  // opened — not at cold app launch. Runs once; getForegroundLocation
+  // itself only ever triggers the native OS prompt once too (see its own
+  // doc comment), so this never re-nags on subsequent visits to this
+  // screen (it never unmounts — it's pushed under Charger Detail, not
+  // replaced).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const outcome = await getForegroundLocation();
+        if (cancelled) return;
+        if (outcome.status === "granted") {
+          setCoords(outcome.coords);
+          return;
+        }
+        // Denied or errored — fall back to the backend's fixed reference
+        // point (send no coords at all) rather than blocking Discover.
+        setCoords(null);
+        if (outcome.status === "denied") {
+          setLocationDenialKind(outcome.canAskAgain ? "retry" : "settings");
+          if (await shouldShowApproxDistanceNotice()) {
+            if (!cancelled) setApproxNotice(true);
+          }
+        }
+      } catch {
+        // Anything unexpected here (a storage read failing, some platform
+        // quirk) must still fall back rather than leave coords stuck
+        // `undefined` forever — that would leave the radius-effect below
+        // waiting indefinitely and Discover never loading at all.
+        if (!cancelled) setCoords(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Radius is server-side filtering (GET /chargers/discover?radiusMiles=),
   // not a client-side re-filter of an already-fetched list — so changing
   // the chip genuinely refetches against real distances, same as the
-  // initial load.
+  // initial load. Waits for the location resolution above to settle
+  // (coords !== undefined) before firing the very first fetch, so that
+  // fetch is correctly-originated from the start rather than fetching
+  // once against the fallback and again moments later against real
+  // coords.
   useEffect(() => {
-    refetchChargers(radius);
-  }, [radius]);
+    if (coords === undefined) return;
+    refetchChargers(radius, coords ?? undefined);
+  }, [radius, coords]);
+
+  const retryLocation = async () => {
+    const outcome = await getForegroundLocation();
+    if (outcome.status === "granted") {
+      setLocationDenialKind(null);
+      setApproxNotice(false);
+      setCoords(outcome.coords);
+    } else if (outcome.status === "denied") {
+      setLocationDenialKind(outcome.canAskAgain ? "retry" : "settings");
+    }
+  };
 
   // The search bar + filter chips tuck away while scrolling down the list
   // (more room to browse) and reappear scrolling up or near the top —
@@ -116,6 +178,29 @@ export function DiscoverListScreen({ navigation }: Props) {
           <ChevronRight size={13} color={tokens.textSoft} />
         </View>
       </View>
+
+      {approxNotice && (
+        <View style={{ marginHorizontal: 20, marginTop: 10, flexDirection: "row", gap: 8, backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.md, padding: 12 }}>
+          <TriangleAlert size={14} color={tokens.danger} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12, color: tokens.text, lineHeight: 17 }}>
+              Distances shown are approximate — Kelo doesn't have your location.{" "}
+              {locationDenialKind === "settings" ? "Enable it in Settings for accurate distances." : "You can allow it to see accurate distances."}
+            </Text>
+            <Pressable
+              onPress={() => (locationDenialKind === "settings" ? Linking.openSettings() : retryLocation())}
+              style={{ marginTop: 6 }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: "600", color: tokens.cyan }}>
+                {locationDenialKind === "settings" ? "Open Settings" : "Allow location"}
+              </Text>
+            </Pressable>
+          </View>
+          <Pressable onPress={() => setApproxNotice(false)} hitSlop={8} style={{ padding: 2 }}>
+            <X size={14} color={tokens.textSoft} />
+          </Pressable>
+        </View>
+      )}
 
       <Animated.View
         style={{

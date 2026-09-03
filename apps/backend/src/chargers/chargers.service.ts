@@ -141,9 +141,15 @@ export class ChargersService {
       select: PUBLIC_CHARGER_SELECT,
     });
 
+    // The driver's real device location when the mobile app sent one
+    // (location permission granted) — falls back to the fixed reference
+    // point otherwise, exactly as before this existed (permission denied,
+    // or any other caller that doesn't send lat/lng at all).
+    const origin = query.lat !== undefined && query.lng !== undefined ? { lat: query.lat, lng: query.lng } : DEFAULT_SEARCH_ORIGIN;
+
     const withDistance = chargers.map((charger) => ({
       ...charger,
-      distanceMiles: haversineMiles(DEFAULT_SEARCH_ORIGIN, { lat: charger.lat!, lng: charger.lng! }),
+      distanceMiles: haversineMiles(origin, { lat: charger.lat!, lng: charger.lng! }),
     }));
 
     const filtered =

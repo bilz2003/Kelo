@@ -31,7 +31,7 @@ interface ChargerStoreValue {
   chargers: Charger[]; // real chargers from GET /chargers/discover (Discover)
   chargersLoading: boolean;
   chargersError: string | null;
-  refetchChargers: (radiusMiles?: number) => Promise<void>;
+  refetchChargers: (radiusMiles?: number, coords?: { lat: number; lng: number }) => Promise<void>;
   myChargers: MyCharger[]; // real chargers from GET /chargers (owner-scoped)
   myChargersLoading: boolean;
   myChargersError: string | null;
@@ -52,11 +52,11 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   const [chargers, setChargers] = useState<Charger[]>([]);
   const [chargersLoading, setChargersLoading] = useState(true);
   const [chargersError, setChargersError] = useState<string | null>(null);
-  const refetchChargers = useCallback(async (radiusMiles?: number) => {
+  const refetchChargers = useCallback(async (radiusMiles?: number, coords?: { lat: number; lng: number }) => {
     setChargersLoading(true);
     setChargersError(null);
     try {
-      const data = await getDiscoverChargers(radiusMiles);
+      const data = await getDiscoverChargers(radiusMiles, coords);
       setChargers(data.map(mapDiscoverCharger));
     } catch (err) {
       setChargersError(err instanceof ApiError ? err.message : "Couldn't load chargers — check your connection and try again.");

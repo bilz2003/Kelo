@@ -31,9 +31,18 @@ export interface DiscoverCharger {
   photos: string[];
 }
 
-export function getDiscoverChargers(radiusMiles?: number): Promise<DiscoverCharger[]> {
-  const query = radiusMiles !== undefined ? `?radiusMiles=${radiusMiles}` : "";
-  return apiFetch(`/chargers/discover${query}`);
+export function getDiscoverChargers(radiusMiles?: number, coords?: { lat: number; lng: number }): Promise<DiscoverCharger[]> {
+  const params = new URLSearchParams();
+  if (radiusMiles !== undefined) params.set("radiusMiles", String(radiusMiles));
+  // Omitted entirely when location permission was denied/unavailable —
+  // the backend falls back to its own fixed reference point in that case,
+  // not a client-sent default.
+  if (coords) {
+    params.set("lat", String(coords.lat));
+    params.set("lng", String(coords.lng));
+  }
+  const query = params.toString();
+  return apiFetch(`/chargers/discover${query ? `?${query}` : ""}`);
 }
 
 // Raw shape of GET /chargers and GET /chargers/:id (chargers.service.ts's
