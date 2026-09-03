@@ -164,6 +164,8 @@ export function mapDiscoverCharger(dc: DiscoverCharger): Charger {
     sessions: 0,
     available: dc.available,
     photos: dc.photos,
+    lat: dc.lat,
+    lng: dc.lng,
   };
 }
 
@@ -212,5 +214,7 @@ export function mapOwnerCharger(oc: OwnerCharger, ownerName: string): MyCharger 
     available: oc.available,
     photos: oc.photos,
     photoKeys: oc.photoKeys,
+    lat: oc.lat ?? undefined,
+    lng: oc.lng ?? undefined,
   };
 }

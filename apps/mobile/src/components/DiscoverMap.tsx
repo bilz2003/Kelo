@@ -1,117 +1,122 @@
-import React, { useRef, useState } from "react";
-import { View, Text, Pressable, Animated, LayoutChangeEvent } from "react-native";
-import { PanGestureHandler, PanGestureHandlerGestureEvent, State, PanGestureHandlerStateChangeEvent } from "react-native-gesture-handler";
-import Svg, { Line } from "react-native-svg";
-import { MapPin } from "lucide-react-native";
-import { useTheme } from "@/theme/ThemeContext";
-import { fonts } from "@/theme/tokens";
+import React, { useEffect, useMemo, useRef } from "react";
+import { View } from "react-native";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Charger } from "@kelo/core";
-import { pinPosition } from "@/utils/map";
+import { buildMapHtml } from "./discoverMapHtml";
 
-const WORLD_SCALE = 1.6; // the pannable world is 160% of the visible viewport, so there's room to drag
+const CARTO_API_KEY = process.env.EXPO_PUBLIC_CARTO_API_KEY ?? "";
 
-const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+interface DiscoverMapProps {
+  chargers: Charger[];
+  selectedId: number | undefined;
+  onPinTap: (c: Charger) => void;
+  onBackgroundTap: () => void;
+  // Real device location from the Discover location-permission flow
+  // (DiscoverListScreen's own getForegroundLocation) — undefined/null
+  // means no real fix (denied, or still resolving): no "You" marker is
+  // drawn in that case, rather than a fabricated position.
+  deviceLocation?: { lat: number; lng: number } | null;
+}
 
 /**
- * Stylized, draggable postcode-level map (not real cartography — matches
- * the web prototype). Panning uses react-native-gesture-handler's classic
- * PanGestureHandler + Animated rather than the newer worklet-based Gesture
- * API, since that needs react-native-reanimated configured and this map's
- * interaction (drag within clamped bounds, tap a pin) doesn't need it.
+ * Real, geographically accurate map — a Leaflet map running inside a
+ * WebView, replacing the old stylized postcode-lookup grid entirely. See
+ * discoverMapHtml.ts for the actual map/tile/marker implementation shared
+ * with the web platform variant, and MAP-INTEGRATION.md for the full
+ * picture (tile provider decision, verified smoothness optimizations,
+ * what's proven vs a human judgment call).
  */
-export function DiscoverMap({
-  chargers, selectedId, onPinTap, onBackgroundTap,
-}: {
-  chargers: Charger[]; selectedId: number | undefined; onPinTap: (c: Charger) => void; onBackgroundTap: () => void;
-}) {
-  const { tokens } = useTheme();
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const committed = useRef({ x: 0, y: 0 }); // base offset from the last completed drag
-  const live = useRef({ x: 0, y: 0 }); // running offset during the active drag
+export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, deviceLocation }: DiscoverMapProps) {
+  const webViewRef = useRef<WebView>(null);
+  const readyRef = useRef(false);
+  // Built once per mount — the HTML document itself never changes after
+  // that. Real data (chargers, device location, selection) is pushed in
+  // afterward via postMessage instead of regenerating/reloading this
+  // string, which is what makes it possible for the WebView instance
+  // (kept mounted across viewMode/tab changes by DiscoverListScreen) to
+  // genuinely stay warm rather than reloading the Leaflet bundle every
+  // time the map becomes visible again.
+  const html = useMemo(() => buildMapHtml(CARTO_API_KEY), []);
 
-  const boundX = (size.width * (WORLD_SCALE - 1)) / 2;
-  const boundY = (size.height * (WORLD_SCALE - 1)) / 2;
+  const chargerPayload = () =>
+    chargers.filter((c) => c.lat != null && c.lng != null).map((c) => ({ id: c.id, lat: c.lat, lng: c.lng }));
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    setSize({ width, height });
+  const post = (message: Record<string, unknown>) => {
+    webViewRef.current?.postMessage(JSON.stringify(message));
   };
 
-  const onGestureEvent = (e: PanGestureHandlerGestureEvent) => {
-    const { translationX, translationY } = e.nativeEvent;
-    const x = clamp(committed.current.x + translationX, -boundX, boundX);
-    const y = clamp(committed.current.y + translationY, -boundY, boundY);
-    live.current = { x, y };
-    pan.setValue({ x, y });
-  };
+  // Each of these fires only when the underlying value actually changes
+  // (a real refetch, a real location update, a real tap-driven
+  // selection) — never inside a gesture handler, and never on every
+  // render regardless of whether anything changed.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post({ type: "setChargers", chargers: chargerPayload() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargers]);
 
-  const onHandlerStateChange = (e: PanGestureHandlerStateChangeEvent) => {
-    if (e.nativeEvent.oldState === State.ACTIVE) {
-      committed.current = live.current;
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
+  }, [deviceLocation?.lat, deviceLocation?.lng]);
+
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post({ type: "setSelected", chargerId: selectedId ?? null });
+  }, [selectedId]);
+
+  const handleMessage = (event: WebViewMessageEvent) => {
+    let msg: { type: string; chargerId?: number };
+    try {
+      msg = JSON.parse(event.nativeEvent.data);
+    } catch {
+      return;
+    }
+    if (msg.type === "ready") {
+      readyRef.current = true;
+      post({ type: "setChargers", chargers: chargerPayload() });
+      post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
+      post({ type: "setSelected", chargerId: selectedId ?? null });
+      if (deviceLocation) {
+        post({ type: "setCenter", lat: deviceLocation.lat, lng: deviceLocation.lng });
+      }
+    } else if (msg.type === "pinTap") {
+      const charger = chargers.find((c) => c.id === msg.chargerId);
+      if (charger) onPinTap(charger);
+    } else if (msg.type === "backgroundTap") {
+      onBackgroundTap();
     }
   };
 
-  const worldWidth = size.width * WORLD_SCALE;
-  const worldHeight = size.height * WORLD_SCALE;
-  const gridLines = { v: Math.ceil(worldWidth / 40), h: Math.ceil(worldHeight / 40) };
-
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.surface, overflow: "hidden" }} onLayout={onLayout}>
-      <PanGestureHandler minDist={10} onGestureEvent={onGestureEvent} onHandlerStateChange={onHandlerStateChange}>
-        <Animated.View style={{ flex: 1 }}>
-          {size.width > 0 && (
-            <Animated.View
-              style={{
-                position: "absolute",
-                left: size.width / 2 - worldWidth / 2,
-                top: size.height / 2 - worldHeight / 2,
-                width: worldWidth,
-                height: worldHeight,
-                transform: pan.getTranslateTransform(),
-              }}
-            >
-              <Pressable onPress={onBackgroundTap} style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}>
-                <Svg width={worldWidth} height={worldHeight} style={{ position: "absolute" }}>
-                  {Array.from({ length: gridLines.v }).map((_, i) => (
-                    <Line key={`v${i}`} x1={i * 40} y1={0} x2={i * 40} y2={worldHeight} stroke={tokens.hair} strokeWidth={1} />
-                  ))}
-                  {Array.from({ length: gridLines.h }).map((_, i) => (
-                    <Line key={`h${i}`} x1={0} y1={i * 40} x2={worldWidth} y2={i * 40} stroke={tokens.hair} strokeWidth={1} />
-                  ))}
-                </Svg>
-
-                {/* Driver's own approximate area */}
-                <View pointerEvents="none" style={{ position: "absolute", left: "46%", top: "50%", transform: [{ translateX: -6 }, { translateY: -6 }], alignItems: "center" }}>
-                  <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: tokens.textSoft, borderWidth: 2, borderColor: tokens.ink }} />
-                  <Text style={{ marginTop: 3, fontFamily: fonts.mono, fontSize: 9.5, color: tokens.textSoft, backgroundColor: tokens.ink, paddingHorizontal: 5, borderRadius: 4 }}>You</Text>
-                </View>
-              </Pressable>
-
-              {chargers.map((c) => {
-                const pos = pinPosition(c);
-                const active = selectedId === c.id;
-                return (
-                  <Pressable
-                    key={c.id}
-                    onPress={() => onPinTap(c)}
-                    hitSlop={8}
-                    style={{ position: "absolute", left: `${pos.x}%`, top: `${pos.y}%`, transform: [{ translateX: -14 }, { translateY: -28 }], padding: 4 }}
-                  >
-                    <MapPin size={active ? 28 : 24} color={tokens.cyan} fill={active ? tokens.cyan : tokens.cyanTint10} strokeWidth={2} />
-                  </Pressable>
-                );
-              })}
-            </Animated.View>
-          )}
-        </Animated.View>
-      </PanGestureHandler>
-
-      {!selectedId && (
-        <Text pointerEvents="none" style={{ position: "absolute", bottom: 8, left: 10, right: 10, fontSize: 9.5, color: tokens.textSoft, fontFamily: fonts.mono }}>
-          Drag to pan · tap a pin for details · postcode-level only
-        </Text>
-      )}
+    <View style={{ flex: 1, backgroundColor: "#12161C" }}>
+      <WebView
+        ref={webViewRef}
+        source={{ html }}
+        onMessage={handleMessage}
+        // Leaflet owns 100% of gesture handling — the WebView's own
+        // native scroll/bounce/overscroll is fully disabled so there is
+        // no dual-handling conflict between the native scroll view and
+        // Leaflet's own JS-driven pan/zoom (see discoverMapHtml.ts's
+        // viewport meta + touch-action:none for the page-level half of
+        // this same requirement).
+        scrollEnabled={false}
+        bounces={false}
+        overScrollMode="never"
+        nestedScrollEnabled={false}
+        // iOS: react-native-webview ships WKWebView as its only iOS
+        // backend — confirmed against the installed package's own
+        // source (no UIWebView reference anywhere in it), not assumed.
+        // Android: androidLayerType explicitly forces hardware-
+        // accelerated compositing for this view. Confirmed against
+        // RNCWebViewManagerImpl.kt that leaving this unset resolves to
+        // LAYER_TYPE_NONE, not LAYER_TYPE_HARDWARE — setting it
+        // explicitly is a real, meaningful change, not restating a
+        // default.
+        androidLayerType="hardware"
+        originWhitelist={["*"]}
+        style={{ flex: 1, backgroundColor: "#12161C" }}
+      />
     </View>
   );
 }

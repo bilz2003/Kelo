@@ -20,6 +20,8 @@ export interface Charger {
   sessions: number;
   available: boolean; // whether the host currently accepts bookings on this charger
   photos?: string[]; // up to 2 displayable image URLs (presigned S3 view URLs once persisted)
+  lat?: number; // real geocoded coordinates (postcodes.io, backend-side) — for the real Leaflet map, not the old stylized postcode-lookup one
+  lng?: number;
 }
 
 export type ListingNameMap = Record<number, string>;

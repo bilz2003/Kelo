@@ -267,48 +267,63 @@ export function DiscoverListScreen({ navigation }: Props) {
         </View>
       </View>
 
-      {chargersLoading ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60 }}>
-          <ActivityIndicator color={tokens.cyan} />
-        </View>
-      ) : chargersError ? (
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
-            <TriangleAlert size={18} color={tokens.danger} style={{ marginBottom: 8 }} />
-            <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center", marginBottom: 14 }}>{chargersError}</Text>
-            <Pressable
-              onPress={() => refetchChargers(radius)}
-              style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 16 }}
-            >
-              <Text style={{ fontSize: 12.5, fontWeight: "500", color: tokens.text }}>Try again</Text>
-            </Pressable>
+      <View style={{ flex: 1, position: "relative" }}>
+        {chargersLoading ? (
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60 }}>
+            <ActivityIndicator color={tokens.cyan} />
           </View>
-        </View>
-      ) : visible.length === 0 ? (
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
-            <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center" }}>No chargers within {radius} mi. Try a wider radius.</Text>
+        ) : chargersError ? (
+          <View style={{ paddingHorizontal: 20 }}>
+            <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
+              <TriangleAlert size={18} color={tokens.danger} style={{ marginBottom: 8 }} />
+              <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center", marginBottom: 14 }}>{chargersError}</Text>
+              <Pressable
+                onPress={() => refetchChargers(radius)}
+                style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 16 }}
+              >
+                <Text style={{ fontSize: 12.5, fontWeight: "500", color: tokens.text }}>Try again</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      ) : viewMode === "map" ? (
-        <View style={{ flex: 1 }}>
+        ) : visible.length === 0 ? (
+          <View style={{ paddingHorizontal: 20 }}>
+            <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
+              <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center" }}>No chargers within {radius} mi. Try a wider radius.</Text>
+            </View>
+          </View>
+        ) : viewMode === "list" ? (
+          <FlatList
+            data={visible}
+            keyExtractor={(c) => String(c.id)}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+            onScroll={onListScroll}
+            scrollEventThrottle={16}
+            renderItem={({ item }) => <ChargerCard charger={item} name={nameFor(item)} onPress={() => goToDetail(item)} />}
+          />
+        ) : null}
+
+        {/* Always mounted, regardless of viewMode/loading/error/empty —
+            visibility toggles via display, not conditional rendering, so
+            the WebView instance (and the Leaflet page running inside it)
+            never reloads just from switching tabs back and forth. Only
+            actually shown under the same conditions the map branch above
+            used to gate on (view mode is "map", and there's real data to
+            show it against). */}
+        <View
+          style={{
+            position: "absolute", left: 0, right: 0, top: 0, bottom: 0,
+            display: viewMode === "map" && !chargersLoading && !chargersError && visible.length > 0 ? "flex" : "none",
+          }}
+        >
           <DiscoverMap
             chargers={visible}
             selectedId={mapPinSelected?.id}
             onPinTap={(c) => setMapPinSelected(c)}
             onBackgroundTap={() => setMapPinSelected(null)}
+            deviceLocation={coords}
           />
         </View>
-      ) : (
-        <FlatList
-          data={visible}
-          keyExtractor={(c) => String(c.id)}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-          onScroll={onListScroll}
-          scrollEventThrottle={16}
-          renderItem={({ item }) => <ChargerCard charger={item} name={nameFor(item)} onPress={() => goToDetail(item)} />}
-        />
-      )}
+      </View>
 
       <Modal visible={!!mapPinSelected} transparent animationType="none" onRequestClose={closeSheet}>
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
