@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert } from "react-native";
 import { CreditCard, Wallet, Car, Bell, HelpCircle, LogOut, Sun, Moon, ChevronRight } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
@@ -62,6 +62,12 @@ export function AccountScreen() {
           {MENU.map((item, i) => (
             <Pressable
               key={item.label}
+              // These rows had a ChevronRight implying navigation but no
+              // onPress at all — a real, silent dead-tap bug, not just an
+              // unbuilt destination (none of these screens exist yet).
+              // Real screens are out of scope here; this at least gives
+              // honest feedback instead of the tap doing nothing.
+              onPress={() => Alert.alert(item.label, "Not available yet — coming soon.")}
               style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderBottomWidth: i < MENU.length - 1 ? 1 : 0, borderBottomColor: tokens.hair }}
             >
               <item.icon size={16} color={tokens.textSoft} />

@@ -44,6 +44,15 @@ interface ChargerStoreValue {
   removeCharger: (id: number) => Promise<void>;
   nameFor: (c: Charger) => string;
   siblingNames: (excludeId: number | null) => string[];
+  // See SessionContext.reset() for why this exists at all — same leak,
+  // same fix: this provider also sits above AuthProvider, so without this
+  // a logged-out-then-back-in (or different-account) session would
+  // briefly render the previous account's cached charger lists until the
+  // next refetch overwrote them. Setting *Loading back to true (not just
+  // clearing the arrays) matters — every screen already gates its empty
+  // state on that flag, so this avoids a flash of a false "no chargers"
+  // empty state in between.
+  reset: () => void;
 }
 
 const ChargerStoreContext = createContext<ChargerStoreValue | undefined>(undefined);
@@ -119,6 +128,15 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
 
   const siblingNames = (excludeId: number | null) => myChargers.filter((c) => c.id !== excludeId).map((c) => nameFor(c));
 
+  const reset = useCallback(() => {
+    setChargers([]);
+    setChargersLoading(true);
+    setChargersError(null);
+    setMyChargers([]);
+    setMyChargersLoading(true);
+    setMyChargersError(null);
+  }, []);
+
   return (
     <ChargerStoreContext.Provider
       value={{
@@ -135,6 +153,7 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
         removeCharger,
         nameFor,
         siblingNames,
+        reset,
       }}
     >
       {children}

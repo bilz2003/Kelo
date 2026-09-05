@@ -18,7 +18,8 @@
       },
       "permissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "softwareKeyboardLayoutMode": "pan"
     },
     "plugins": [
       [

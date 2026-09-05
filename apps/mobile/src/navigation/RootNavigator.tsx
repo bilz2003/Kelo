@@ -8,6 +8,7 @@ import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { PulseDot } from "@/components/Controls";
 import { useSession } from "@/state/SessionContext";
+import { MINIMIZED_BANNER_CLEARANCE } from "@/lib/layout";
 import { RootStackParamList, RootTabParamList, DiscoverStackParamList } from "./types";
 import { navigationRef } from "./navigationRef";
 
@@ -83,6 +84,10 @@ function MinimizedSessionBanner() {
   const session = useSession();
   // 78 matches Tabs' tabBarStyle.height above; 28 matches the fixed
   // bottom safe-area constant every other screen's sticky footer uses.
+  // MINIMIZED_BANNER_CLEARANCE (@/lib/layout) is derived from these same
+  // two numbers plus this banner's own gap/card height — screens with
+  // their own bottom-sticky CTA use it to reserve space so this banner
+  // never physically overlaps (and blocks taps on) that button.
   const TAB_BAR_HEIGHT = 78;
   const SAFE_AREA_BOTTOM = 28;
 

@@ -8,6 +8,8 @@ import { ScreenHeader } from "@/components/ScreenHeader";
 import { PrimaryButton } from "@/components/Button";
 import { TimeSlotPicker, ArrivalDatePicker } from "@/components/TimePickers";
 import { useChargerStore } from "@/state/ChargerStoreContext";
+import { useSession } from "@/state/SessionContext";
+import { MINIMIZED_BANNER_CLEARANCE } from "@/lib/layout";
 import { DiscoverStackParamList } from "@/navigation/types";
 import { NOW, nextFullHour, startOfDay, dayEndOf, isSameDate, formatTimeOfDay, formatTimeWithDay, formatDuration, dateLabel } from "@kelo/core";
 import { MIN_BOOKING_HOURS, MAX_BOOKING_HOURS } from "@kelo/core";
@@ -19,6 +21,13 @@ type Props = NativeStackScreenProps<DiscoverStackParamList, "BookingFlow">;
 export function BookingFlowScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { nameFor } = useChargerStore();
+  const session = useSession();
+  // See ChargerDetailScreen for the real bug this is fixing — the global
+  // minimized-session banner draws across the full device height
+  // (ignoring where the tab bar starts), so this button sits in the same
+  // physical band the banner occupies even though it's laid out as a
+  // normal flex child, not position:absolute.
+  const bannerClearance = session.active && !session.visible ? MINIMIZED_BANNER_CLEARANCE : 0;
   const charger = route.params.charger;
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -101,7 +110,7 @@ export function BookingFlowScreen({ route, navigation }: Props) {
         <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", paddingHorizontal: 20, marginBottom: 8 }}>{confirmError}</Text>
       )}
 
-      <View style={{ padding: 20, paddingBottom: 28, borderTopWidth: 1, borderTopColor: tokens.hair, backgroundColor: tokens.ink }}>
+      <View style={{ padding: 20, paddingBottom: 28 + bannerClearance, borderTopWidth: 1, borderTopColor: tokens.hair, backgroundColor: tokens.ink }}>
         <PrimaryButton
           disabled={confirming}
           onPress={async () => {

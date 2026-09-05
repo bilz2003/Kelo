@@ -9,6 +9,8 @@ import { fonts, radii } from "@/theme/tokens";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { PrimaryButton } from "@/components/Button";
 import { useChargerStore } from "@/state/ChargerStoreContext";
+import { useSession } from "@/state/SessionContext";
+import { MINIMIZED_BANNER_CLEARANCE } from "@/lib/layout";
 import { DiscoverStackParamList } from "@/navigation/types";
 
 type Props = NativeStackScreenProps<DiscoverStackParamList, "ChargerDetail">;
@@ -98,6 +100,13 @@ function PhotoViewer({ photos, index, onChangeIndex, onClose }: { photos: string
 export function ChargerDetailScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { chargers, nameFor } = useChargerStore();
+  const session = useSession();
+  // Real bug this audit found: this footer is absolutely positioned at
+  // bottom:0, and so is RootNavigator's global "Live session in progress"
+  // banner — with a session minimized, the two sat directly on top of
+  // each other and the banner physically blocked taps on "Book this
+  // charger". Reserving its clearance here keeps this button clear of it.
+  const bannerClearance = session.active && !session.visible ? MINIMIZED_BANNER_CLEARANCE : 0;
   const routeCharger = route.params.charger;
   // Re-resolve from the store so any host-side edits made after this
   // screen was first opened are reflected immediately.
@@ -206,7 +215,7 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
         ))}
       </ScrollView>
 
-      <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: tokens.ink, borderTopWidth: 1, borderTopColor: tokens.hair, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28, flexDirection: "row", alignItems: "center", gap: 14 }}>
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: bannerClearance, backgroundColor: tokens.ink, borderTopWidth: 1, borderTopColor: tokens.hair, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28, flexDirection: "row", alignItems: "center", gap: 14 }}>
         <View>
           <Text style={{ fontFamily: fonts.mono, fontSize: 19, fontWeight: "500", color: tokens.text }}>£{charger.rate.toFixed(2)}</Text>
           <Text style={{ fontSize: 10.5, color: tokens.textSoft }}>per kWh</Text>

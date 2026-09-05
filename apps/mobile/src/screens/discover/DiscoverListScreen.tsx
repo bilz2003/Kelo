@@ -151,10 +151,24 @@ export function DiscoverListScreen({ navigation }: Props) {
     Animated.timing(searchAnim, { toValue: searchVisible ? 1 : 0, duration: 220, useNativeDriver: false }).start();
   }, [searchVisible]);
 
-  // Already filtered to radius and sorted nearest-first by the backend —
-  // no client-side re-filtering needed (or possible: distance is now a
-  // real computed value, not a mock string to re-parse).
-  const visible = chargers;
+  // Radius/sort are server-side (see the effect above); the filter chips
+  // are a genuine client-side re-filter of that same already-fetched list —
+  // real bug fix: these chips highlighted on tap but were never actually
+  // applied to `visible` before, so every filter silently did nothing.
+  const visible = chargers.filter((c) => {
+    switch (filter) {
+      case "Available now":
+        return c.available;
+      case "Tethered":
+        return c.cable === "Tethered cable";
+      case "7kW+":
+        return c.powerNum >= 7;
+      case "Fast 11kW+":
+        return c.powerNum >= 11;
+      default:
+        return true;
+    }
+  });
 
   const goToDetail = (c: Charger) => {
     // Clear the map selection on navigate-away, not just on manual dismiss —
@@ -172,11 +186,29 @@ export function DiscoverListScreen({ navigation }: Props) {
           <Text style={{ fontFamily: fonts.display, fontWeight: "700", fontSize: 24, color: tokens.text, letterSpacing: -0.3 }}>Find a charger</Text>
           <BrandMark size={22} textSize={18} />
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+        {/*
+         * This used to hardcode "Carshalton, SM5" unconditionally — a
+         * leftover from before real device location was wired in. It's
+         * only actually true when coords is null (the backend's own
+         * DEFAULT_SEARCH_ORIGIN fallback, which is that same Carshalton
+         * centroid — see search-origin.ts), so it was silently lying
+         * whenever a real GPS fix was in use. Now it reflects the same
+         * three states the effect above resolves to, and — since there was
+         * never anywhere for the chevron to navigate to — only keeps a
+         * (functional) chevron in the fallback state, reusing the same
+         * retry/settings action as the banner below.
+         */}
+        <Pressable
+          onPress={coords === null ? () => (locationDenialKind === "settings" ? Linking.openSettings() : retryLocation()) : undefined}
+          disabled={coords !== null}
+          style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+        >
           <MapPin size={13} color={tokens.textSoft} />
-          <Text style={{ color: tokens.textSoft, fontSize: 13 }}>Carshalton, SM5</Text>
-          <ChevronRight size={13} color={tokens.textSoft} />
-        </View>
+          <Text style={{ color: tokens.textSoft, fontSize: 13 }}>
+            {coords === undefined ? "Locating…" : coords === null ? "Carshalton, SM5 (approx.)" : "Your location"}
+          </Text>
+          {coords === null && <ChevronRight size={13} color={tokens.textSoft} />}
+        </Pressable>
       </View>
 
       {approxNotice && (

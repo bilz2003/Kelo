@@ -28,11 +28,25 @@ export function LoginScreen({ onNavigateToRegister }: { onNavigateToRegister: ()
   };
 
   return (
+    // iOS: "padding" is still correct here — Android is handled by the OS
+    // itself via windowSoftInputMode "pan" (see app.json), which shifts the
+    // whole window instead of asking RN to resize/relayout, so no `behavior`
+    // is needed here on that platform.
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: tokens.ink }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 72, paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/*
+         * Deliberately NOT vertically centered (no justifyContent: "center").
+         * Centering ties every field's on-screen position to the container's
+         * available height, which changes whenever the keyboard frame does —
+         * see the KeyboardAvoidingView note below. Top-anchoring makes field
+         * position independent of keyboard height entirely.
+         */}
         <View style={{ alignItems: "center", marginBottom: 40 }}>
           <BrandMark size={34} textSize={26} gap={10} />
           <Text style={{ fontFamily: fonts.mono, fontSize: 14, color: tokens.cyan, letterSpacing: 0.2, marginTop: 10 }}>verified, metered charging</Text>
@@ -96,13 +110,21 @@ export function LoginScreen({ onNavigateToRegister }: { onNavigateToRegister: ()
             paddingVertical: 12,
             fontSize: 13.5,
             color: tokens.text,
-            marginBottom: error ? 10 : 24,
+            marginBottom: 10,
           }}
         />
 
-        {error && (
-          <Text style={{ fontSize: 12.5, color: tokens.danger, lineHeight: 18, marginBottom: 14 }}>{error}</Text>
-        )}
+        {/*
+         * Fixed-height slot, always rendered, regardless of whether `error`
+         * is set. Conditionally rendering this block (and varying the
+         * password field's marginBottom above) reflows everything below it
+         * — the button and the "create an account" link jump — every time
+         * an error appears or clears. Reserving the space up front removes
+         * that jump entirely.
+         */}
+        <View style={{ minHeight: 32, marginBottom: 14 }}>
+          {error && <Text style={{ fontSize: 12.5, color: tokens.danger, lineHeight: 18 }}>{error}</Text>}
+        </View>
 
         <PrimaryButton onPress={submit} disabled={!canSubmit}>
           {submitting ? <ActivityIndicator color={tokens.onAccent} /> : "Log in"}

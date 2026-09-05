@@ -16,7 +16,14 @@ type Props = NativeStackScreenProps<RootStackParamList, "ActiveSession">;
 export function ActiveSessionScreen({ navigation }: Props) {
   const { tokens } = useTheme();
   const session = useSession();
+  // Two separate flags, not one — a real bug this audit found: sharing a
+  // single `dismissedFullPrompt` between the "car looks fully charged"
+  // notice and the later "idle occupancy charges have started" warning
+  // meant dismissing the first (informational, no cost yet) silently
+  // suppressed the second (money now being charged) for the rest of the
+  // session, since both used to render from the same gated block.
   const [dismissedFullPrompt, setDismissedFullPrompt] = useState(false);
+  const [dismissedIdlePrompt, setDismissedIdlePrompt] = useState(false);
   const [unplugging, setUnplugging] = useState(false);
   const [unplugError, setUnplugError] = useState<string | null>(null);
   const [showExtensionPicker, setShowExtensionPicker] = useState(false);
@@ -41,7 +48,7 @@ export function ActiveSessionScreen({ navigation }: Props) {
   const { idleChargesActive, idleCost, energyCost, totalCost } = charger
     ? computeSessionFinancials(charger, kwh, seconds)
     : { idleChargesActive: false, idleCost: 0, energyCost: 0, totalCost: 0 };
-  const showFullPrompt = isFull && !dismissedFullPrompt;
+  const showFullPrompt = isFull && (idleChargesActive ? !dismissedIdlePrompt : !dismissedFullPrompt);
 
   // Mock-only trigger, standing in for a real hardware unplug signal — this
   // is the ONLY thing that can end a session, and it's fire-and-forget:
@@ -213,7 +220,10 @@ export function ActiveSessionScreen({ navigation }: Props) {
                 </Text>
               </View>
             </View>
-            <GhostButton onPress={() => setDismissedFullPrompt(true)} style={{ paddingVertical: 11 }}>
+            <GhostButton
+              onPress={() => (idleChargesActive ? setDismissedIdlePrompt(true) : setDismissedFullPrompt(true))}
+              style={{ paddingVertical: 11 }}
+            >
               Got it
             </GhostButton>
           </View>

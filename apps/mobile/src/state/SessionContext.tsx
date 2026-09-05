@@ -58,6 +58,21 @@ interface SessionContextValue {
   clearExtensionOutcome: () => void;
   show: () => void;
   hide: () => void;
+  // Re-checks GET /sessions/active and resumes (minimized) if one exists.
+  // See the doc comment on the implementation for why this is a function
+  // callers trigger, not a mount effect. Safe to call more than once —
+  // connect() itself tears down any existing socket before reconnecting.
+  resumeIfActive: () => Promise<void>;
+  // Full teardown — a real gap this audit found: logging out never touched
+  // this context at all (it's a sibling provider above AuthProvider, not
+  // nested under it, so it survives a logout unless something explicitly
+  // resets it). Without this, a still-connected socket kept streaming a
+  // previous session's ticks in the background after logout, and a
+  // different account logging in on the same device would see the
+  // previous user's "Live session in progress" banner and live numbers —
+  // a real state leak between accounts, not just stale UI. Called from
+  // AppShell whenever auth status leaves "authenticated".
+  reset: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -122,45 +137,50 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  // Backend-authoritative reconnect: on a fresh launch (including after
-  // the app was force-quit mid-session), ask whether the signed-in driver
-  // has a session still running server-side. If so, resume showing it —
+  // Backend-authoritative reconnect: ask whether the signed-in driver has
+  // a session still running server-side. If so, resume showing it —
   // minimized, not auto-opened — with its real current elapsed state
   // rather than starting blank. The mock adapter keeps ticking the whole
   // time regardless of whether anything is subscribed, so this is a real
   // resume, not a restart.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const activeSession = await getActiveSession();
-        if (cancelled || !activeSession) return;
-        setCharger(activeSession.charger);
-        setKwh(activeSession.kwh);
-        setSeconds(activeSession.seconds);
-        setActive(true);
-        setVisible(false);
-        bookingIdRef.current = activeSession.bookingId;
-        setBookingArrivalAt(new Date(activeSession.arrivalAt));
-        setBookingEndAt(new Date(activeSession.endAt));
-        if (activeSession.pendingExtension) {
-          setPendingExtension({
-            id: activeSession.pendingExtension.id,
-            bookingId: activeSession.bookingId,
-            sessionId: activeSession.id,
-            requestedEndAt: activeSession.pendingExtension.requestedEndAt,
-            status: "pending",
-          });
-        }
-        connect(activeSession.id);
-      } catch {
-        // No valid session yet (e.g. not logged in) — nothing to resume.
+  //
+  // Exposed as `resumeIfActive` (called from AppShell whenever auth status
+  // becomes "authenticated") rather than fired from a mount effect here —
+  // a real bug this audit found: SessionProvider sits *above* AuthProvider
+  // (see App.tsx), so its own mount happens before any token exists on a
+  // fresh login. A mount-time-only check fires once, fails silently (no
+  // token yet), and never runs again — so a session already running
+  // server-side (another device, or from before this fresh sign-in) never
+  // surfaced as the minimized banner after logging in, only after a cold
+  // launch that *already* had stored tokens. Driving it off the auth
+  // transition instead means it only ever runs once a token is confirmed
+  // present, covering both cases with one path.
+  const resumeIfActive = async () => {
+    try {
+      const activeSession = await getActiveSession();
+      if (!activeSession) return;
+      setCharger(activeSession.charger);
+      setKwh(activeSession.kwh);
+      setSeconds(activeSession.seconds);
+      setActive(true);
+      setVisible(false);
+      bookingIdRef.current = activeSession.bookingId;
+      setBookingArrivalAt(new Date(activeSession.arrivalAt));
+      setBookingEndAt(new Date(activeSession.endAt));
+      if (activeSession.pendingExtension) {
+        setPendingExtension({
+          id: activeSession.pendingExtension.id,
+          bookingId: activeSession.bookingId,
+          sessionId: activeSession.id,
+          requestedEndAt: activeSession.pendingExtension.requestedEndAt,
+          status: "pending",
+        });
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      connect(activeSession.id);
+    } catch {
+      // No valid session to resume — nothing to do.
+    }
+  };
 
   useEffect(() => disconnect, []);
 
@@ -210,6 +230,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const show = () => setVisible(true);
   const hide = () => setVisible(false);
 
+  const reset = () => {
+    disconnect();
+    setActive(false);
+    setVisible(false);
+    setCharger(null);
+    setKwh(0);
+    setSeconds(0);
+    setLastReceipt(null);
+    setPendingExtension(null);
+    setBookingArrivalAt(null);
+    setBookingEndAt(null);
+  };
+
   return (
     <SessionContext.Provider
       value={{
@@ -230,6 +263,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         clearExtensionOutcome,
         show,
         hide,
+        resumeIfActive,
+        reset,
       }}
     >
       {children}

@@ -1,9 +1,21 @@
 /**
- * The app treats 2 Aug 2026, 2:32pm as "now" throughout — matching the
- * fictional current date/time the whole prototype (and this port) is set
- * in. Swap this for `new Date()` once wired to a real backend/clock.
+ * Real time — this used to be frozen at a hardcoded "2 Aug 2026, 2:32pm"
+ * fictional prototype date (this exact comment used to say "swap this for
+ * `new Date()` once wired to a real backend/clock", which the port to a
+ * real backend never actually did). That staleness was silent and
+ * harmless while nothing here checked elapsed wall-clock time against it,
+ * but this audit found it corrupting real money: the backend computes
+ * overstay/idle charges from the *real* current time against a booking's
+ * arrivalAt/endAt, which the frontend was still stamping relative to this
+ * frozen date — so as real time drifted further past it (a month, by the
+ * time this was caught), a real session's overstay window became roughly
+ * a month long, producing a real receipt for over £2.9 million on a
+ * single charging session. Evaluated once at module load, so it's real
+ * time as of app boot — fine for this app's actual usage (nothing here
+ * needs sub-session precision on "today"), just not a permanently-wrong
+ * constant anymore.
  */
-export const NOW = new Date(2026, 7, 2, 14, 32);
+export const NOW = new Date();
 
 export const MIN_BOOKING_HOURS = 1;
 export const MAX_BOOKING_HOURS = 24; // cap on how far "done by" can extend past arrival

@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreenNative from "expo-splash-screen";
@@ -9,8 +9,8 @@ import { useFonts as useIBMPlexSans, IBMPlexSans_400Regular, IBMPlexSans_500Medi
 import { useFonts as useIBMPlexMono, IBMPlexMono_400Regular, IBMPlexMono_500Medium } from "@expo-google-fonts/ibm-plex-mono";
 
 import { ThemeProvider, useTheme } from "@/theme/ThemeContext";
-import { ChargerStoreProvider } from "@/state/ChargerStoreContext";
-import { SessionProvider } from "@/state/SessionContext";
+import { ChargerStoreProvider, useChargerStore } from "@/state/ChargerStoreContext";
+import { SessionProvider, useSession } from "@/state/SessionContext";
 import { AuthProvider, useAuth } from "@/state/AuthContext";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { SplashScreen } from "@/screens/SplashScreen";
@@ -25,12 +25,41 @@ configureNotificationHandler();
 function AppShell() {
   const { tokens, mode } = useTheme();
   const { status, justAuthenticated, clearJustAuthenticated } = useAuth();
+  const session = useSession();
+  const chargerStore = useChargerStore();
   const [booted, setBooted] = useState(false);
 
   // Registered once for the app's lifetime, not per-render/per-screen —
   // handles both a tap while the app's already running and a cold start
   // caused by the tap itself.
   useEffect(() => setUpNotificationDeepLinking(), []);
+
+  // SessionProvider/ChargerStoreProvider are siblings above AuthProvider
+  // (see the tree below), not nested under it, so neither one naturally
+  // unmounts/resets on logout. Reset both explicitly on every transition
+  // away from "authenticated" — an explicit Account > Log out tap and a
+  // forced session-expiry logout (AuthContext's setSessionExpiredHandler)
+  // both land here the same way, since both end up setting this same
+  // status. See SessionContext.reset()/ChargerStoreContext.reset() for
+  // what this was actually leaking without it.
+  //
+  // The reverse transition matters too: resumeIfActive() re-checks for a
+  // still-running server-side session every time status becomes
+  // "authenticated" — a real bug this audit found, since SessionContext
+  // used to only ever check once, on its own mount, which happens before
+  // any token exists on a fresh login (see resumeIfActive's own doc
+  // comment for the full explanation).
+  const prevStatus = useRef(status);
+  useEffect(() => {
+    if (prevStatus.current !== "authenticated" && status === "authenticated") {
+      session.resumeIfActive();
+    }
+    if (prevStatus.current === "authenticated" && status !== "authenticated") {
+      session.reset();
+      chargerStore.reset();
+    }
+    prevStatus.current = status;
+  }, [status]);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.ink }}>

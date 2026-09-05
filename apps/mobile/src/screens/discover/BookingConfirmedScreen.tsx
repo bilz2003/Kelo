@@ -7,6 +7,7 @@ import { fonts, radii } from "@/theme/tokens";
 import { PrimaryButton, GhostButton } from "@/components/Button";
 import { useChargerStore } from "@/state/ChargerStoreContext";
 import { useSession } from "@/state/SessionContext";
+import { MINIMIZED_BANNER_CLEARANCE } from "@/lib/layout";
 import { DiscoverStackParamList, RootStackParamList } from "@/navigation/types";
 import { dateLabel, formatTimeOfDay, formatTimeWithDay } from "@kelo/core";
 import { getBookingDetail } from "@/api/bookings";
@@ -18,6 +19,8 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
   const { tokens } = useTheme();
   const { nameFor } = useChargerStore();
   const session = useSession();
+  // See ChargerDetailScreen for the real bug this is fixing.
+  const bannerClearance = session.active && !session.visible ? MINIMIZED_BANNER_CLEARANCE : 0;
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const { charger, details, bookingId } = route.params;
@@ -76,7 +79,7 @@ export function BookingConfirmedScreen({ route, navigation }: Props) {
         <Text style={{ fontSize: 12, color: tokens.danger, textAlign: "center", marginBottom: 12 }}>{startError}</Text>
       )}
 
-      <View style={{ width: "100%", gap: 10, marginTop: "auto", paddingBottom: 24 }}>
+      <View style={{ width: "100%", gap: 10, marginTop: "auto", paddingBottom: 24 + bannerClearance }}>
         <PrimaryButton
           disabled={starting}
           onPress={async () => {

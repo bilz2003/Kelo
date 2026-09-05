@@ -43,6 +43,8 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
   const label = { fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase" as const, letterSpacing: 0.6, marginBottom: 8 };
 
   return (
+    // See LoginScreen for why Android gets no `behavior` here: windowSoftInputMode
+    // "pan" (app.json) handles it natively instead.
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: tokens.ink, paddingTop: 54 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScreenHeader title="Create account" onBack={onBack} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
@@ -91,10 +93,13 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
           secureTextEntry
           textContentType="newPassword"
           onSubmitEditing={submit}
-          style={[inputStyle, { marginBottom: error ? 10 : 24 }]}
+          style={[inputStyle, { marginBottom: 10 }]}
         />
 
-        {error && <Text style={{ fontSize: 12.5, color: tokens.danger, lineHeight: 18, marginBottom: 14 }}>{error}</Text>}
+        {/* Fixed-height slot — see LoginScreen for why this can't be conditionally rendered. */}
+        <View style={{ minHeight: 32, marginBottom: 14 }}>
+          {error && <Text style={{ fontSize: 12.5, color: tokens.danger, lineHeight: 18 }}>{error}</Text>}
+        </View>
 
         <PrimaryButton onPress={submit} disabled={!canSubmit}>
           {submitting ? <ActivityIndicator color={tokens.onAccent} /> : "Create account"}
