@@ -4,7 +4,6 @@
     "slug": "kelo",
     "scheme": "kelo",
     "version": "0.1.0",
-    "newArchEnabled": true,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#12161C",
@@ -37,7 +36,10 @@
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false
         }
-      ]
+      ],
+      "expo-font",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {

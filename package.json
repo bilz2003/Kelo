@@ -5,5 +5,8 @@
     "apps/*",
     "packages/*",
     "infrastructure"
-  ]
+  ],
+  "overrides": {
+    "react": "19.2.3"
+  }
 }

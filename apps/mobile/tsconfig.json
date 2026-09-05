@@ -2,9 +2,13 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "baseUrl": ".",
+    // baseUrl removed for TypeScript 6's deprecation of it (errors here
+    // under tsc, will stop working entirely in TS 7) — paths without an
+    // explicit baseUrl resolve relative to this tsconfig file's own
+    // directory by default, which is exactly what "." already meant here,
+    // so this is a like-for-like resolution change, not a behavior change.
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]
