@@ -11,6 +11,8 @@ interface DiscoverMapProps {
   onPinTap: (c: Charger) => void;
   onBackgroundTap: () => void;
   deviceLocation?: { lat: number; lng: number } | null;
+  // See DiscoverMap.tsx for the full explanation — same contract here.
+  themeMode: "light" | "dark";
 }
 
 /**
@@ -27,10 +29,13 @@ interface DiscoverMapProps {
  * Playwright pipeline (see TESTING.md) able to exercise the real map
  * content for real, not a stand-in for it.
  */
-export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, deviceLocation }: DiscoverMapProps) {
+export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, deviceLocation, themeMode }: DiscoverMapProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const readyRef = useRef(false);
-  const html = useMemo(() => buildMapHtml(CARTO_API_KEY), []);
+  // themeMode read once here (initial paint) — see the effect below for
+  // the live-update path, matching DiscoverMap.tsx exactly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const html = useMemo(() => buildMapHtml(CARTO_API_KEY, themeMode), []);
 
   const chargerPayload = () =>
     chargers.filter((c) => c.lat != null && c.lng != null).map((c) => ({ id: c.id, lat: c.lat, lng: c.lng }));
@@ -54,6 +59,14 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     if (!readyRef.current) return;
     post({ type: "setSelected", chargerId: selectedId ?? null });
   }, [selectedId]);
+
+  // Live theme switch — same reasoning as DiscoverMap.tsx: the iframe
+  // never reloads, so this is the only path a toggle made while the map
+  // is already open can reach it.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post({ type: "setTheme", mode: themeMode });
+  }, [themeMode]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -84,13 +97,15 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chargers, selectedId, deviceLocation]);
 
+  const bg = themeMode === "light" ? "#E5E7EB" : "#12161C";
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#12161C" }}>
+    <View style={{ flex: 1, backgroundColor: bg }}>
       <iframe
         ref={iframeRef}
         srcDoc={html}
         title="Discover map"
-        style={{ flex: 1, border: "none", width: "100%", height: "100%", backgroundColor: "#12161C" } as React.CSSProperties}
+        style={{ flex: 1, border: "none", width: "100%", height: "100%", backgroundColor: bg } as React.CSSProperties}
       />
     </View>
   );

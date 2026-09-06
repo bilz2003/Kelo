@@ -205,3 +205,93 @@ real street names and geography visible (Marylebone Road, the Thames,
 City of Westminster), correctly dark-themed, correct attribution row,
 with the real charger pin and real "You" marker both still correctly
 positioned on top of it.
+
+## Light/dark theme following (2026-09)
+
+The map now follows the app's Account > Appearance toggle instead of
+always rendering Dark Matter. Confirmed live, not assumed, before
+building this: CARTO's Positron style (`rastertiles/light_all`) works
+under the exact same free API key as Dark Matter (`rastertiles/dark_all`)
+— same host, same key, same 5M/month fair-use tier, no separate
+product/plan. Verified the same way the original Dark Matter key
+enforcement was verified: diffed a keyed vs. unkeyed Positron tile
+request — different bytes, different MD5, and the unkeyed one visibly
+shows the "API KEY REQUIRED" watermark while the keyed one is a clean
+real basemap.
+
+Switching is live, not just on next load: `buildMapHtml` bakes the
+*initial* theme in (so first paint already matches, no flash), but a
+theme change while the map is already open reaches it through the same
+postMessage bridge everything else uses (`{ type: 'setTheme', mode }`),
+handled by calling Leaflet's own `TileLayer.setUrl()` — a real documented
+method for swapping a layer's tile source in place, not a
+teardown/recreate. Confirmed directly: toggling the theme from the
+Account tab (map not even visible at that moment, just still mounted
+behind it) fires real tile requests for the new style immediately, before
+ever navigating back to Discover.
+
+## Attribution — checked CARTO's actual current terms first
+
+Checked `carto.com/legal/basemap-terms` and `carto.com/attributions`
+directly (2026-09) before changing anything. What's actually required:
+CARTO and OpenStreetMap must be credited, "prominent and conspicuous,"
+not obscured — enforced (an API key can be suspended/revoked for
+non-compliance). What's *not* specified anywhere in their terms: any
+required font size, color, or exact position. Leaflet's own default
+attribution styling (white background, dark text, bottom-right) is a
+Leaflet default, not a CARTO mandate.
+
+On that basis, the control is now restyled per theme — dark
+semi-transparent background + muted light text on the dark map, light
+semi-transparent background + muted dark text on the light map — same
+text, same links, same corner, same font-size, never hidden. (One real
+snag hit and fixed along the way: `leaflet.css` sets the control's
+*background* under the more specific `.leaflet-container
+.leaflet-control-attribution` selector while its *color* rule is on the
+plain single-class selector — an initial restyle attempt matched the
+plain selector for both properties, so the color override won but the
+background override silently lost to Leaflet's own more-specific rule.
+Confirmed via a live computed-style check, not assumed, then fixed by
+matching that same specificity.)
+
+## Gesture tuning beyond the original build (2026-09)
+
+Re-examined Leaflet's own Map options (leafletjs.com/reference.html) for
+further gesture/animation tuning, each a deliberate, documented choice:
+
+- `inertiaDeceleration: 2500` (down from Leaflet's 3000 default) — a
+  flick coasts a bit further before stopping.
+- `inertiaMaxSpeed: 3000` (Leaflet's own default is uncapped/Infinity) —
+  caps how far a single hard flick can fling the view on a map this
+  small.
+- `zoomSnap` / `zoomDelta: 0.5` (default 1) — pinch/wheel zoom lands on
+  the nearest half-level instead of always rounding to a whole integer.
+  Confirmed live: a scripted wheel-zoom sequence produced real zoom
+  levels of 13, 13.5, 14, 14.5, 15, 15.5 — genuinely fractional, not
+  just configured.
+- `tapTolerance: 20` (default 15) — more forgiving of finger jitter when
+  tapping a small charger pin.
+
+Re-captured the same frame-timing method as the original smoothness work
+(an rAF interval sampler + a `PerformanceObserver` for Long Tasks, both
+running inside the map's own frame across a scripted drag+wheel-zoom
+gesture), as a genuine before/after rather than a single after-only
+number — Leaflet's plain defaults temporarily restored, tested, then the
+tuned values restored and re-tested:
+
+|  | avg frame | max frame | frames >16.7ms | Long Tasks |
+|---|---|---|---|---|
+| Before (Leaflet defaults) | 16.66ms | 16.8ms | 25/102 (24.5%) | 0 |
+| After (tuned) | 16.67ms | 16.8ms | 14/102 (13.7%) | 0 |
+
+Both were already essentially exactly 60fps before touching anything —
+the original build's rendering pipeline (translate3d panning, hardware
+compositing) left little raw frame-rate headroom to gain. The frames->16.7ms
+share did drop meaningfully, though with max frame time unchanged in
+both runs this mostly reflects reduced vsync-boundary jitter rather than
+eliminated jank — reported honestly rather than oversold. The real,
+distinctly-checkable gain from this round is gesture *feel* (glide
+distance, zoom-landing precision, tap forgiveness), which frame-timing
+alone doesn't fully capture. **Stated plainly, same as the original
+smoothness work: this data is real signal, not a substitute for someone
+actually holding the app and judging whether it feels right.**

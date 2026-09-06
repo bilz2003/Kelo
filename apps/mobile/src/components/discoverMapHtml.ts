@@ -10,24 +10,36 @@
  *
  * The document is static and self-contained: it takes no charger/location
  * data at construction time. All real data (chargers, device location,
- * selection) arrives after load via postMessage, so the page itself never
- * needs regenerating/reloading when that data changes — see the "keep the
- * WebView warm" requirement this exists to satisfy.
+ * selection, theme) arrives after load via postMessage, so the page itself
+ * never needs regenerating/reloading when that data changes — see the
+ * "keep the WebView warm" requirement this exists to satisfy. initialMode
+ * is the one exception: baked in at construction so the very first paint
+ * already matches the app's current theme instead of flashing the wrong
+ * one before a postMessage can arrive.
  *
- * Tile source: CARTO's Dark Matter raster basemap — chosen deliberately
- * (checked current terms live, 2026-09, rather than assuming the old
- * no-auth convention still held): CARTO now requires a free API key on
- * basemaps.cartocdn.com (enforced since ~2026-08), still no account
- * needed, 5M tile requests/month fair-use free tier, and requires CARTO +
- * OpenStreetMap attribution to stay visible on the map — implemented below
- * via Leaflet's own attribution control (left on, never suppressed).
- * Get a key at https://carto.com/basemaps/apikey and set
- * EXPO_PUBLIC_CARTO_API_KEY in apps/mobile/.env. Raster tiles are flagged
- * by CARTO as being phased toward eventual retirement in favor of their
- * vector service (no fixed date given) — noted honestly in
- * MAP-INTEGRATION.md as a real, if not urgent, future consideration.
+ * Tile source: CARTO's raster basemaps — Dark Matter for dark mode,
+ * Positron for light mode, both under the one free API key (checked live,
+ * 2026-09: both `dark_all` and `light_all` return real 200 tiles with the
+ * same key, no separate product/plan — confirmed by diffing a keyed vs
+ * unkeyed Positron tile, same as the original Dark Matter check: unkeyed
+ * comes back watermarked "API KEY REQUIRED", keyed doesn't). Still no
+ * account needed beyond the free key itself, 5M tile requests/month
+ * fair-use free tier either way. Live theme switching uses
+ * L.TileLayer.setUrl() — a real documented Leaflet method for swapping a
+ * layer's source in place — rather than tearing down and recreating the
+ * layer.
+ *
+ * Attribution: CARTO's basemap terms (checked live at carto.com/legal/
+ * basemap-terms and carto.com/attributions, 2026-09) require CARTO +
+ * OpenStreetMap to be credited, "prominent and conspicuous", not obscured
+ * — but specify no required font size, color, or exact positioning beyond
+ * that. Leaflet's own default attribution control (light background, dark
+ * text) is a Leaflet styling default, not a CARTO requirement — restyled
+ * below to fit each theme (dark-on-light-map, light-on-dark-map) while
+ * keeping the same text/links, same size class, same corner, never
+ * hidden — content and prominence unchanged, only its chrome.
  */
-export function buildMapHtml(cartoApiKey: string): string {
+export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" = "dark"): string {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -40,7 +52,9 @@ export function buildMapHtml(cartoApiKey: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <style>
-  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #12161C; }
+  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }
+  html, body, #map { background: #12161C; }
+  html[data-theme="light"] body, html[data-theme="light"] #map { background: #E5E7EB; }
   /* touch-action: none on the map container is what actually keeps the
      browser's own native touch-scroll/touch-zoom handling out of the way
      entirely, leaving every touch event free for Leaflet's own gesture
@@ -58,6 +72,28 @@ export function buildMapHtml(cartoApiKey: string): string {
     width: 14px; height: 14px; border-radius: 7px; background: #4FD8C4;
     border: 2px solid #12161C; box-shadow: 0 0 0 4px rgba(79,216,196,0.25);
   }
+  /* Attribution restyle — same text/links/corner/size class Leaflet
+     already renders, just recolored per theme so it doesn't sit as a
+     bright white bar on the dark map (or, once light mode existed, a
+     mismatched dark bar on the light one). Nothing here shrinks it below
+     Leaflet's own default font-size or hides/obscures it.
+     leaflet.css itself sets background under the more specific
+     ".leaflet-container .leaflet-control-attribution" (its color rule is
+     on the plain single-class selector) — matched here, confirmed live
+     against a real page rather than assumed, after a first attempt at
+     just ".leaflet-control-attribution" silently lost the background
+     override to that more specific rule while the color override (same
+     specificity as Leaflet's) won. */
+  .leaflet-container .leaflet-control-attribution {
+    background: rgba(18,22,28,0.72);
+  }
+  .leaflet-control-attribution { color: #8891A0; }
+  .leaflet-control-attribution a { color: #B7C9C5; }
+  html[data-theme="light"] .leaflet-container .leaflet-control-attribution {
+    background: rgba(255,255,255,0.75);
+  }
+  html[data-theme="light"] .leaflet-control-attribution { color: #57606A; }
+  html[data-theme="light"] .leaflet-control-attribution a { color: #2C5F58; }
 </style>
 </head>
 <body>
@@ -66,6 +102,9 @@ export function buildMapHtml(cartoApiKey: string): string {
 <script>
 (function () {
   var CARTO_KEY = ${JSON.stringify(cartoApiKey)};
+  var INITIAL_MODE = ${JSON.stringify(initialMode)};
+  document.documentElement.setAttribute('data-theme', INITIAL_MODE);
+
   // Fallback center: same Carshalton (SM5) centroid the backend's
   // DEFAULT_SEARCH_ORIGIN uses when no real device location is available
   // — kept in sync deliberately (see DiscoverMap.tsx's own comment), not
@@ -78,9 +117,43 @@ export function buildMapHtml(cartoApiKey: string): string {
     attributionControl: true,
     center: FALLBACK_CENTER,
     zoom: 13,
+    // Gesture/animation tuning beyond Leaflet's plain defaults — real
+    // documented Map options (leafletjs.com/reference.html), each
+    // deliberately chosen, not left at whatever Leaflet happens to ship:
+    //  - inertiaDeceleration: lower than the 3000 default (px/s^2) means
+    //    a flick coasts a bit further/longer before stopping, closer to
+    //    the native-feeling glide of Apple/Google Maps than an abrupt
+    //    stop.
+    //  - inertiaMaxSpeed: Leaflet's own default is Infinity (uncapped) —
+    //    a hard, fast flick on a small-content map like this one can
+    //    otherwise fling you disorientingly far in one gesture. Capped,
+    //    not left unbounded.
+    //  - zoomSnap/zoomDelta at 0.5 instead of the default 1: pinch-zoom
+    //    lands on the fractional level closest to where the gesture
+    //    actually ended, instead of always snapping to the next whole
+    //    integer — raster tiles still render fine at fractional zoom
+    //    (Leaflet CSS-scales the nearest whole tile set), so this is a
+    //    real smoothness gain with no rendering cost.
+    //  - tapTolerance raised from the 15px default: a small, deliberate
+    //    allowance for finger jitter when tapping a charger pin (a real
+    //    driver-facing use case, not a desktop pointer) before Leaflet's
+    //    touch handler reclassifies the gesture as a drag instead of a
+    //    tap.
+    inertia: true,
+    inertiaDeceleration: 2500,
+    inertiaMaxSpeed: 3000,
+    zoomSnap: 0.5,
+    zoomDelta: 0.5,
+    tap: true,
+    tapTolerance: 20,
   });
 
-  L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=' + encodeURIComponent(CARTO_KEY), {
+  function tileUrlFor(mode) {
+    var style = mode === 'light' ? 'light_all' : 'dark_all';
+    return 'https://basemaps.cartocdn.com/rastertiles/' + style + '/{z}/{x}/{y}.png?key=' + encodeURIComponent(CARTO_KEY);
+  }
+
+  var tileLayer = L.tileLayer(tileUrlFor(INITIAL_MODE), {
     maxZoom: 20,
     attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
@@ -118,11 +191,12 @@ export function buildMapHtml(cartoApiKey: string): string {
   var selectedId = null;
   var youMarker = null;
 
-  // -- RN/iframe -> map: only three message types, each fired once per
-  // real change (a fresh chargers list, a real device-location update, a
-  // tap-driven selection change) — never anything tied to the pan/zoom
-  // gesture loop itself. This function only ever RECEIVES; nothing in
-  // here posts back out, keeping the bridge one-directional per event.
+  // -- RN/iframe -> map: each message type fires once per real change (a
+  // fresh chargers list, a real device-location update, a tap-driven
+  // selection change, a real theme toggle) — never anything tied to the
+  // pan/zoom gesture loop itself. This function only ever RECEIVES;
+  // nothing in here posts back out, keeping the bridge one-directional
+  // per event.
   function applyMessage(msg) {
     if (msg.type === 'setChargers') {
       Object.keys(chargerMarkers).forEach(function (id) {
@@ -169,6 +243,15 @@ export function buildMapHtml(cartoApiKey: string): string {
       }
     } else if (msg.type === 'setCenter') {
       map.setView([msg.lat, msg.lng], map.getZoom());
+    } else if (msg.type === 'setTheme') {
+      // Live theme switch, not just an initial-paint concern — setUrl()
+      // is Leaflet's own real method for swapping a tile layer's source
+      // in place (confirmed against Leaflet's TileLayer docs), so this
+      // updates the already-mounted, already-warm map/WebView instance
+      // directly rather than requiring a reload of this whole document.
+      var mode = msg.mode === 'light' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', mode);
+      tileLayer.setUrl(tileUrlFor(mode));
     }
   }
 
@@ -204,7 +287,8 @@ export function buildMapHtml(cartoApiKey: string): string {
   // legacy left/top positioning fallback); bridgeMessageCount is
   // incremented exactly once per post() call above, so a test can sample
   // it before/after a simulated drag and confirm it did not increase
-  // mid-gesture.
+  // mid-gesture; currentTheme/currentTileUrl let a test confirm a theme
+  // switch actually reached the tile layer, not just the DOM attribute.
   window.__kelo = {
     bridgeMessageCount: 0,
     getDiagnostics: function () {
@@ -214,6 +298,9 @@ export function buildMapHtml(cartoApiKey: string): string {
         mapPaneTransform: pane ? pane.style.transform : null,
         bridgeMessageCount: window.__kelo.bridgeMessageCount,
         chargerMarkerCount: Object.keys(chargerMarkers).length,
+        currentTheme: document.documentElement.getAttribute('data-theme'),
+        currentTileUrl: tileLayer.getAttribution ? tileLayer._url : null,
+        zoom: map.getZoom(),
       };
     },
   };

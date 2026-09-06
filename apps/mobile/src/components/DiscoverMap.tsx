@@ -16,6 +16,12 @@ interface DiscoverMapProps {
   // means no real fix (denied, or still resolving): no "You" marker is
   // drawn in that case, rather than a fabricated position.
   deviceLocation?: { lat: number; lng: number } | null;
+  // The app's current theme (@/theme/ThemeContext) — baked in as the
+  // WebView's initial tile source (no flash of the wrong theme on first
+  // paint) and pushed live via postMessage on every change after that, so
+  // toggling Account > Appearance while the map is already open updates
+  // it in place rather than only on the next time it's opened.
+  themeMode: "light" | "dark";
 }
 
 /**
@@ -26,17 +32,20 @@ interface DiscoverMapProps {
  * picture (tile provider decision, verified smoothness optimizations,
  * what's proven vs a human judgment call).
  */
-export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, deviceLocation }: DiscoverMapProps) {
+export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, deviceLocation, themeMode }: DiscoverMapProps) {
   const webViewRef = useRef<WebView>(null);
   const readyRef = useRef(false);
   // Built once per mount — the HTML document itself never changes after
-  // that. Real data (chargers, device location, selection) is pushed in
-  // afterward via postMessage instead of regenerating/reloading this
-  // string, which is what makes it possible for the WebView instance
-  // (kept mounted across viewMode/tab changes by DiscoverListScreen) to
-  // genuinely stay warm rather than reloading the Leaflet bundle every
-  // time the map becomes visible again.
-  const html = useMemo(() => buildMapHtml(CARTO_API_KEY), []);
+  // that. Real data (chargers, device location, selection, theme after
+  // the first paint) is pushed in afterward via postMessage instead of
+  // regenerating/reloading this string, which is what makes it possible
+  // for the WebView instance (kept mounted across viewMode/tab changes by
+  // DiscoverListScreen) to genuinely stay warm rather than reloading the
+  // Leaflet bundle every time the map becomes visible again. themeMode is
+  // read once here deliberately (initial paint only) — see the effect
+  // below for the live-update path.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const html = useMemo(() => buildMapHtml(CARTO_API_KEY, themeMode), []);
 
   const chargerPayload = () =>
     chargers.filter((c) => c.lat != null && c.lng != null).map((c) => ({ id: c.id, lat: c.lat, lng: c.lng }));
@@ -65,6 +74,15 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     post({ type: "setSelected", chargerId: selectedId ?? null });
   }, [selectedId]);
 
+  // Live theme switch — the WebView never reloads, so this is the only
+  // way a toggle made while the map is already open reaches it; the
+  // initial paint is handled separately by baking themeMode into the
+  // useMemo above, not by this effect firing on mount.
+  useEffect(() => {
+    if (!readyRef.current) return;
+    post({ type: "setTheme", mode: themeMode });
+  }, [themeMode]);
+
   const handleMessage = (event: WebViewMessageEvent) => {
     let msg: { type: string; chargerId?: number };
     try {
@@ -88,8 +106,10 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     }
   };
 
+  const bg = themeMode === "light" ? "#E5E7EB" : "#12161C";
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#12161C" }}>
+    <View style={{ flex: 1, backgroundColor: bg }}>
       <WebView
         ref={webViewRef}
         source={{ html }}
@@ -115,7 +135,7 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
         // default.
         androidLayerType="hardware"
         originWhitelist={["*"]}
-        style={{ flex: 1, backgroundColor: "#12161C" }}
+        style={{ flex: 1, backgroundColor: bg }}
       />
     </View>
   );

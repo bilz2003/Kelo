@@ -6,6 +6,7 @@ import { CreateChargerDto } from "./dto/create-charger.dto";
 import { UpdateChargerDto } from "./dto/update-charger.dto";
 import { DiscoverQueryDto } from "./dto/discover-query.dto";
 import { PhotoUploadUrlDto } from "./dto/photo-upload-url.dto";
+import { SearchLocationDto } from "./dto/search-location.dto";
 
 @Controller("chargers")
 @UseGuards(JwtAuthGuard)
@@ -35,6 +36,18 @@ export class ChargersController {
   @Get("discover")
   discover(@Query() query: DiscoverQueryDto) {
     return this.chargersService.findDiscover(query);
+  }
+
+  // Same ordering reason as "discover" above — must come before @Get(":id").
+  // Backs Discover's search bar: resolves typed postcode/area text to a
+  // lat/lng the client then re-sends as its own discover origin (see
+  // getDiscoverChargers), rather than folding free text into the discover
+  // query itself — keeps "what point are we measuring distance from" one
+  // concern (lat/lng only) and "how do we get a point from text" a
+  // separate one.
+  @Get("search-location")
+  searchLocation(@Query() query: SearchLocationDto) {
+    return this.chargersService.geocodeSearchText(query.q);
   }
 
   @Get(":id")

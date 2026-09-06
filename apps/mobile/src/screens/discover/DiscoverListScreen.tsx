@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, Linking, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
+import { View, Text, TextInput, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, Linking, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
 import { Search, SlidersHorizontal, MapPin, ChevronRight, TriangleAlert, X } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
@@ -11,6 +11,8 @@ import { DiscoverMap } from "@/components/DiscoverMap";
 import { SheetHandle } from "@/components/SheetHandle";
 import { useSlideSheet } from "@/components/useSlideSheet";
 import { useChargerStore } from "@/state/ChargerStoreContext";
+import { searchLocation } from "@/api/chargers";
+import { ApiError } from "@/api/client";
 import { getForegroundLocation, shouldShowApproxDistanceNotice } from "@/lib/location";
 import { DiscoverStackParamList } from "@/navigation/types";
 import { Charger } from "@kelo/core";
@@ -53,7 +55,7 @@ function ChargerCard({ charger, name, onPress }: { charger: Charger; name: strin
 }
 
 export function DiscoverListScreen({ navigation }: Props) {
-  const { tokens } = useTheme();
+  const { tokens, mode } = useTheme();
   const { chargers, chargersLoading, chargersError, refetchChargers, nameFor } = useChargerStore();
   const [filter, setFilter] = useState("All");
   const [radius, setRadius] = useState(5);
@@ -69,6 +71,19 @@ export function DiscoverListScreen({ navigation }: Props) {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null | undefined>(undefined);
   const [approxNotice, setApproxNotice] = useState(false);
   const [locationDenialKind, setLocationDenialKind] = useState<"retry" | "settings" | null>(null);
+
+  // Search bar — real now, not the styled placeholder it used to be (see
+  // the input below). searchOrigin is null whenever there's no resolved
+  // search override in effect; when set, it takes priority over coords as
+  // the discover origin below, exactly like a temporary replacement for
+  // "the driver's location" rather than a separate filter dimension.
+  // Clearing the text (searchText === "") drops searchOrigin back to
+  // null, which is *why* clearing genuinely reverts to the normal
+  // device-location/fallback behavior rather than needing special-casing.
+  const [searchText, setSearchText] = useState("");
+  const [searchOrigin, setSearchOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
+  const [searchErrorMessage, setSearchErrorMessage] = useState<string | null>(null);
 
   // Requested contextually here — the first time Discover/Map is actually
   // opened — not at cold app launch. Runs once; getForegroundLocation
@@ -108,6 +123,46 @@ export function DiscoverListScreen({ navigation }: Props) {
     };
   }, []);
 
+  // Debounced geocoding for the search bar — 450ms of no typing before it
+  // actually hits the network, same idea as any other "don't fire a
+  // request per keystroke" search box. Clearing the field (empty/
+  // whitespace-only) drops back to device-location behavior immediately,
+  // no debounce needed for that direction since there's no network call
+  // to save by waiting.
+  useEffect(() => {
+    const trimmed = searchText.trim();
+    if (!trimmed) {
+      setSearchOrigin(null);
+      setSearchStatus("idle");
+      setSearchErrorMessage(null);
+      return;
+    }
+    setSearchStatus("searching");
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await searchLocation(trimmed);
+        if (cancelled) return;
+        setSearchOrigin(result);
+        setSearchStatus("idle");
+        setSearchErrorMessage(null);
+      } catch (err) {
+        if (cancelled) return;
+        // Unrecognized input (or a real network/server error) — graceful,
+        // not a crash: keep showing whatever the last valid origin was
+        // (searchOrigin only ever changes on a *successful* result above)
+        // rather than blanking the list, and surface why underneath the
+        // search bar.
+        setSearchStatus("error");
+        setSearchErrorMessage(err instanceof ApiError ? err.message : "Couldn't reach the search service — try again.");
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchText]);
+
   // Radius is server-side filtering (GET /chargers/discover?radiusMiles=),
   // not a client-side re-filter of an already-fetched list — so changing
   // the chip genuinely refetches against real distances, same as the
@@ -128,11 +183,20 @@ export function DiscoverListScreen({ navigation }: Props) {
   // MyChargersScreen's own refetchMyChargers/loadNextBooking and
   // BookingsScreen's own load — both already refetch on focus for
   // exactly this reason (state that changes elsewhere).
+  //
+  // searchOrigin, when set, wins over coords entirely — a resolved search
+  // is a deliberate, explicit override of "where am I filtering from",
+  // not an addition to it. Still gated on coords having resolved even
+  // when a search is active, simply so the very first paint (before
+  // location permission settles) doesn't fire a fetch against a search
+  // typed in the same instant as a stale/undefined coords state — in
+  // practice this only matters for a fraction of a second on cold mount.
+  const effectiveOrigin = searchOrigin ?? coords ?? undefined;
   useFocusEffect(
     useCallback(() => {
       if (coords === undefined) return;
-      refetchChargers(radius, coords ?? undefined);
-    }, [radius, coords, refetchChargers]),
+      refetchChargers(radius, effectiveOrigin);
+    }, [radius, effectiveOrigin, coords, refetchChargers]),
   );
 
   const retryLocation = async () => {
@@ -260,13 +324,38 @@ export function DiscoverListScreen({ navigation }: Props) {
           <View style={{ paddingHorizontal: 20, paddingVertical: 14 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, paddingHorizontal: 14, paddingVertical: 12 }}>
               <Search size={16} color={tokens.textSoft} />
-              {/* Matches the web prototype: this is styled placeholder text, not a working
-                  search field yet — search isn't wired up to anything there either. */}
-              <Text style={{ flex: 1, fontSize: 13.5, color: tokens.textSoft }}>Search by postcode or area</Text>
-              <Pressable onPress={() => setFiltersOpen((o) => !o)}>
+              {/* Real now — this used to be styled placeholder Text with no
+                  TextInput underneath it at all, which is why tapping it did
+                  literally nothing (no overlay, no pointerEvents issue: there
+                  was simply no focusable input here to receive the tap). */}
+              <TextInput
+                value={searchText}
+                onChangeText={setSearchText}
+                placeholder="Search by postcode or area"
+                placeholderTextColor={tokens.textSoft}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="search"
+                style={{ flex: 1, fontSize: 13.5, color: tokens.text, padding: 0 }}
+              />
+              {searchStatus === "searching" && <ActivityIndicator size="small" color={tokens.textSoft} />}
+              {searchText.length > 0 && searchStatus !== "searching" && (
+                <Pressable onPress={() => setSearchText("")} hitSlop={8}>
+                  <X size={15} color={tokens.textSoft} />
+                </Pressable>
+              )}
+              <Pressable onPress={() => setFiltersOpen((o) => !o)} hitSlop={8}>
                 <SlidersHorizontal size={15} color={filtersOpen ? tokens.cyan : tokens.textSoft} />
               </Pressable>
             </View>
+            {searchStatus === "error" && searchErrorMessage && (
+              <Text style={{ fontSize: 11.5, color: tokens.danger, marginTop: 8, lineHeight: 16 }}>{searchErrorMessage}</Text>
+            )}
+            {searchOrigin && searchStatus === "idle" && (
+              <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.cyan, marginTop: 8 }}>
+                Showing chargers near "{searchText.trim()}"
+              </Text>
+            )}
           </View>
 
           {filtersOpen && (
@@ -374,6 +463,7 @@ export function DiscoverListScreen({ navigation }: Props) {
             onPinTap={(c) => setMapPinSelected(c)}
             onBackgroundTap={() => setMapPinSelected(null)}
             deviceLocation={coords}
+            themeMode={mode}
           />
           {visible.length === 0 && (
             <View

@@ -53,6 +53,13 @@ export class ChargersService {
     return this.photos.createUploadUrl(ownerId, contentType);
   }
 
+  // Backs Discover's search bar — see GeocodingService.geocodeSearchText
+  // for what this actually resolves (full postcode, or outcode like
+  // "SM5") and what it deliberately doesn't (free-text place names).
+  geocodeSearchText(text: string) {
+    return this.geocoding.geocodeSearchText(text);
+  }
+
   async create(ownerId: number, dto: CreateChargerDto) {
     const { lat, lng } = await this.geocoding.geocode(dto.postcode);
     const { photos, ...rest } = dto;

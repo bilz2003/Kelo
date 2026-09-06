@@ -45,6 +45,16 @@ export function getDiscoverChargers(radiusMiles?: number, coords?: { lat: number
   return apiFetch(`/chargers/discover${query ? `?${query}` : ""}`);
 }
 
+// Backs Discover's search bar — resolves typed postcode/area text to a
+// lat/lng via the real backend/postcodes.io, the same shape as real
+// device coords, so the caller can feed it straight into
+// getDiscoverChargers above. Throws ApiError (via apiFetch) on
+// unrecognized input — the caller's job to catch that and show it,
+// not this function's.
+export function searchLocation(q: string): Promise<{ lat: number; lng: number }> {
+  return apiFetch(`/chargers/search-location?q=${encodeURIComponent(q)}`);
+}
+
 // Raw shape of GET /chargers and GET /chargers/:id (chargers.service.ts's
 // findAllForOwner/findOneForOwner — no select, every real column) — unlike
 // DiscoverCharger, this legitimately includes fullAddress/hostCost/
