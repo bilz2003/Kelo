@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, Pressable, Animated, Modal, ScrollView, ActivityIndicator, Linking, NativeSyntheticEvent, NativeScrollEvent, LayoutChangeEvent } from "react-native";
 import { Search, SlidersHorizontal, MapPin, ChevronRight, TriangleAlert, X } from "lucide-react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { Chip, BrandMark } from "@/components/Controls";
@@ -115,10 +116,24 @@ export function DiscoverListScreen({ navigation }: Props) {
   // fetch is correctly-originated from the start rather than fetching
   // once against the fallback and again moments later against real
   // coords.
-  useEffect(() => {
-    if (coords === undefined) return;
-    refetchChargers(radius, coords ?? undefined);
-  }, [radius, coords]);
+  //
+  // useFocusEffect, not a plain useEffect — a real bug this refetch was
+  // missing: this screen never unmounts (it's pushed under Charger
+  // Detail, not replaced — see the location-permission comment above),
+  // so a plain useEffect keyed on [radius, coords] only ever fires once,
+  // on first mount, and again if radius/coords themselves change. It
+  // never re-fires just from returning to this tab — so a charger added
+  // (or edited, or removed) from My Chargers never showed up here until
+  // the app was fully restarted. Same fix, same reasoning, as
+  // MyChargersScreen's own refetchMyChargers/loadNextBooking and
+  // BookingsScreen's own load — both already refetch on focus for
+  // exactly this reason (state that changes elsewhere).
+  useFocusEffect(
+    useCallback(() => {
+      if (coords === undefined) return;
+      refetchChargers(radius, coords ?? undefined);
+    }, [radius, coords, refetchChargers]),
+  );
 
   const retryLocation = async () => {
     const outcome = await getForegroundLocation();
