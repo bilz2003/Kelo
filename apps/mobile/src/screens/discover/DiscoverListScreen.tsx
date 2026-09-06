@@ -317,7 +317,11 @@ export function DiscoverListScreen({ navigation }: Props) {
               </Pressable>
             </View>
           </View>
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 && viewMode === "list" ? (
+          // List view only — Map view's own empty state is the overlay
+          // banner below, on top of the still-rendered map, not this full
+          // replacement. There's no map to preserve here, so this stays
+          // exactly as it was.
           <View style={{ paddingHorizontal: 20 }}>
             <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 20, alignItems: "center" }}>
               <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center" }}>No chargers within {radius} mi. Try a wider radius.</Text>
@@ -337,14 +341,16 @@ export function DiscoverListScreen({ navigation }: Props) {
         {/* Always mounted, regardless of viewMode/loading/error/empty —
             visibility toggles via display, not conditional rendering, so
             the WebView instance (and the Leaflet page running inside it)
-            never reloads just from switching tabs back and forth. Only
-            actually shown under the same conditions the map branch above
-            used to gate on (view mode is "map", and there's real data to
-            show it against). */}
+            never reloads just from switching tabs back and forth. Shown
+            whenever view mode is "map" and there's no loading/error state
+            to show instead — real bug fixed here: this used to also
+            require visible.length > 0, so zero results in Map view hid
+            the map entirely behind the text-only empty state above,
+            instead of just showing zero pins on an otherwise-normal map. */}
         <View
           style={{
             position: "absolute", left: 0, right: 0, top: 0, bottom: 0,
-            display: viewMode === "map" && !chargersLoading && !chargersError && visible.length > 0 ? "flex" : "none",
+            display: viewMode === "map" && !chargersLoading && !chargersError ? "flex" : "none",
           }}
         >
           <DiscoverMap
@@ -354,6 +360,23 @@ export function DiscoverListScreen({ navigation }: Props) {
             onBackgroundTap={() => setMapPinSelected(null)}
             deviceLocation={coords}
           />
+          {visible.length === 0 && (
+            <View
+              pointerEvents="none"
+              style={{ position: "absolute", left: 16, right: 16, top: 16, alignItems: "center" }}
+            >
+              <View
+                pointerEvents="auto"
+                style={{
+                  backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg,
+                  paddingVertical: 10, paddingHorizontal: 16,
+                  shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+                }}
+              >
+                <Text style={{ color: tokens.textSoft, fontSize: 12.5, textAlign: "center" }}>No chargers within {radius} mi. Try a wider radius.</Text>
+              </View>
+            </View>
+          )}
         </View>
       </View>
 
