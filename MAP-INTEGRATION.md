@@ -374,6 +374,37 @@ map-attribution change this round — no native `react-native-webview`
 access from Playwright. Both changes here are pure CSS/JS with zero
 message-bridge involvement.
 
+## Two more follow-ups: timer length, badge shape (2026-09)
+
+**1. Would a 0.5s collapse timer still be compliant? Researched,
+rejected — timing left at ~5s/first-interaction, unchanged.** OSM's own
+guideline states attribution text "must be easily readable and
+understandable, taking into consideration the font, size, colour,
+contrast, positioning **and amount of time that it is visible**" —
+naming visible-duration as one of the actual factors in whether
+attribution counts as legible at all, not a separate concern from the
+collapse-timing allowance. 0.5s is a tenth of OSM's own stated example
+and is below normal human registration time for a small corner element,
+especially on first load when attention is elsewhere. This isn't a
+shorter version of the same compliant pattern — it fails "amount of
+time visible" on its own terms, making it materially the same maneuver
+as the already-rejected pre-collapsed-start idea (attribution technically
+rendered but never actually perceivable reads the same as attribution
+never shown). Not implemented; existing timing untouched.
+
+**2. Badge reshaped**: "(i)" (parens, filled background) → a plain "i"
+in a bordered circle with a transparent fill — no background color at
+all now, just the `hair`-colored ring and `textSoft`-colored glyph
+(same token values as before, only the fill was removed). Checked
+legibility against real tiles rather than assuming a borderless-fill
+badge reads fine just because it looks fine in isolation: screenshotted
+a real close crop of the exact corner position against both real Dark
+Matter and real Positron tiles. Confirmed legible against both — the
+`hair` border reads as a distinct ring against Dark Matter's near-black
+tiles and against Positron's pale ones alike, since that grey is never
+the exact color of either basemap's own content at this screen's zoom
+level.
+
 ## The theme-live-update gap Playwright couldn't have caught (2026-09)
 
 Reported: theme-following didn't actually update the map on a real

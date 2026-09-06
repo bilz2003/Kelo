@@ -139,30 +139,38 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
     justify-content: center;
     width: 22px;
     height: 22px;
+    box-sizing: border-box;
     font-family: ui-monospace, monospace;
-    font-style: italic;
+    font-style: normal;
     font-weight: 700;
     font-size: 12px;
+    line-height: 1;
     cursor: pointer;
   }
-  /* Badge colors: this app's real design tokens (theme/tokens.ts),
-     surface2/hair/textSoft's DARK values specifically — not an arbitrary
-     grey, and deliberately NOT flipped per theme, on purpose. This
-     matches the one directly-comparable precedent already in this same
-     file: .kelo-pin-label above (the "You" marker's chip) uses this
-     exact same fixed dark treatment regardless of which basemap is
-     active, for the same reason — a small floating chip needs to read
-     clearly against either an unpredictable dark or light map surface,
-     which the *light* theme's own surface2/hair values (near-transparent
-     tints designed to sit on this app's own flat light background, not
-     a photographic/cartographic one) can't reliably do. #map-qualified
-     selector for real, checked specificity headroom over the
-     html[data-theme="light"] rules above (same class of bug already hit
-     once with the plain-attribution background override — not repeating
-     it here). */
+  /* Badge colors: this app's real design tokens (theme/tokens.ts) — hair
+     for the circle's border, textSoft for the "i" glyph, both DARK
+     theme's values specifically, deliberately NOT flipped per theme.
+     Matches the one directly-comparable precedent already in this same
+     file: .kelo-pin-label above (the "You" marker's chip) uses this same
+     fixed-dark treatment regardless of which basemap is active, for the
+     same reason — a small floating indicator needs to read against an
+     unpredictable map surface, which the *light* theme's own hair/
+     textSoft values (tuned for this app's own flat light screen
+     background, not a basemap) can't reliably do.
+     No background fill at all now (transparent) — checked, not assumed,
+     that a bare hair-bordered circle with a textSoft glyph stays legible
+     over both real basemaps: screenshotted against real Dark Matter and
+     real Positron tiles at the actual corner position (see
+     MAP-INTEGRATION.md) — the border alone provides a real edge against
+     either, since hair's dark-grey is never the exact color of either
+     basemap's own bottom-right-corner content at the zoom level this
+     screen uses. #map-qualified selector for real, checked specificity
+     headroom over the html[data-theme="light"] rules above (same class
+     of bug already hit once with the plain-attribution background
+     override — not repeating it here). */
   #map .leaflet-control-attribution.kelo-attr-collapsed {
-    background: #222A34; /* tokens.surface2 (dark) */
-    border: 1px solid #2C3540; /* tokens.hair (dark) */
+    background: transparent;
+    border: 1.5px solid #2C3540; /* tokens.hair (dark) */
   }
   #map .leaflet-control-attribution.kelo-attr-collapsed,
   #map .leaflet-control-attribution.kelo-attr-collapsed .kelo-attr-badge {
@@ -245,7 +253,7 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
     if (!container) return; // defensive only — always present with attributionControl:true
     container.innerHTML =
       '<span class="kelo-attr-full">' + container.innerHTML + '</span>' +
-      '<span class="kelo-attr-badge" title="Map data attribution">(i)</span>';
+      '<span class="kelo-attr-badge" title="Map data attribution">i</span>';
     var badge = container.querySelector('.kelo-attr-badge');
 
     function collapse() {
