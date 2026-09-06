@@ -333,6 +333,47 @@ native-specific gap than the theme-switching work had. That said, this
 has not been confirmed on a real device, and isn't being claimed as
 such.
 
+## Two follow-ups to the collapse pattern (2026-09)
+
+**1. Starting pre-collapsed — researched, rejected.** Asked whether the
+map could skip the initial full display and load straight into the
+collapsed "(i)" state. Checked the same three sources again, this time
+specifically for initial-state timing: OSMF's own guideline phrases the
+allowance as a mechanism to "fade/**collapse**" attribution — a verb
+describing a transition from shown to hidden, not a starting condition
+— and separately states "for a browsable map... the credit should
+**typically appear** in a corner of the map", framing initial display as
+the expected default. Neither CARTO's Basemap Terms nor the CartoDB
+style license say anything about initial-load timing at all. **Genuine
+ambiguity, not a clear allowance — not implemented**, same standard as
+the Settings-page question: the map still shows full attribution on
+load before collapsing, unchanged from last round.
+
+**2. Badge restyle.** The "(i)" badge's colors were arbitrary CSS values
+that didn't correspond to any of the app's actual design tokens (e.g.
+`#57606A`/`#B7C9C5` for light-theme text/links — invented, not pulled
+from `theme/tokens.ts`). Now uses the real tokens — `surface2`
+(`#222A34`) for its background, `hair` (`#2C3540`) for its border,
+`textSoft` (`#8891A0`) for the icon color — and deliberately the DARK
+theme's values in both light and dark map modes, not flipped per theme.
+This matches an already-shipped precedent in this exact file:
+`.kelo-pin-label` (the "You" marker's chip) uses this identical
+fixed-dark treatment regardless of which basemap is active, for the
+same reason a small floating chip needs reliable contrast against an
+unpredictable map surface — the light theme's own `surface2`/`hair`
+values are near-transparent tints tuned for sitting on this app's own
+flat light screen background, not a basemap. Confirmed via computed-
+style checks in both themes that the fix actually took (the earlier
+CSS-specificity bug from the theme-toggle round taught to check this
+explicitly, not assume): both dark-map and light-map badges compute to
+identical `rgb(34,42,52)` background / `rgb(44,53,64)` border /
+`rgb(136,145,160)` text.
+
+**Verified against the web host only**, same disclosed scope as every
+map-attribution change this round — no native `react-native-webview`
+access from Playwright. Both changes here are pure CSS/JS with zero
+message-bridge involvement.
+
 ## The theme-live-update gap Playwright couldn't have caught (2026-09)
 
 Reported: theme-following didn't actually update the map on a real
