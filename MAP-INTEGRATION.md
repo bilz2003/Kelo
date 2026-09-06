@@ -254,6 +254,85 @@ background override silently lost to Leaflet's own more-specific rule.
 Confirmed via a live computed-style check, not assumed, then fixed by
 matching that same specificity.)
 
+## Relocating attribution off the map — researched, rejected (2026-09)
+
+Asked whether attribution could move to an Account/Settings screen
+instead of living on the map. Researched before writing any code:
+
+- CARTO's own Basemap Terms tie the requirement to "Persons **viewing**
+  the basemap" — a credit that only exists on a Settings page would
+  never be seen by someone who opens Discover and never visits Account.
+- The underlying cartographic design license is explicit for exactly
+  this case: "for a browsable electronic map... the credits should
+  appear in the corner of the map." Its "reasonably accessible
+  elsewhere" language is for *static/print* reproductions, not this.
+- OpenStreetMap Foundation's own attribution guidelines (OSM credit is
+  jointly required) sanction an About-menu/Settings location only as a
+  **rediscovery path for attribution already shown on the map at least
+  once** — never as a full substitute that removes it from the map/app
+  entirely.
+
+**Conclusion: not implemented.** No source found allows a
+Settings-only credit with nothing on or adjacent to the map itself.
+
+## Attribution collapse-after-interaction (2026-09)
+
+What OSMF's own guidelines *do* sanction, and what's implemented here
+instead: the on-map credit may collapse "automatically on map
+interaction such as panning, clicking, or zooming" or "automatically
+after five seconds", provided "the user must still be able to find the
+licence information if they look for it, for example from an '(i)'
+button in the corner of the map."
+
+Implemented once, in the shared `discoverMapHtml.ts` (pure Leaflet-
+control-level DOM/CSS, no message-bridge changes needed) — not
+duplicated per platform host:
+
+- Full attribution shows on load, exactly as before.
+- Collapses on the user's first pan/zoom (`dragstart`/`zoomstart`,
+  `map.once()`) or after 5s (`setTimeout`), whichever comes first — the
+  exact OSM-stated timing, not invented.
+- Collapsed state is a small persistent "(i)" badge in the same corner,
+  always present once collapsed. Leaflet's own attribution content
+  (with its real, unmodified CARTO/OpenStreetMap links) is wrapped in a
+  sibling span, not replaced — confirmed safe because
+  `Control.Attribution` only ever rewrites its container's innerHTML on
+  construction and on `addAttribution`/`removeAttribution`/`setPrefix`,
+  none of which this code calls again afterward.
+- Tapping the badge re-expands. **Decision, stated explicitly**: a
+  manual re-expand stays expanded for the rest of that page's lifetime
+  — no re-collapse timer or listener is re-armed. Chosen deliberately
+  over "collapses again after another 5s/interaction": re-hiding
+  something a user just explicitly asked to see would read as the
+  credit vanishing while they're still reading it, which is worse than
+  the map staying slightly less tidy for the remainder of one session.
+  (Both options were genuinely defensible; this is the one implemented.)
+
+**Confirmed, not assumed, how this interacts with the useFocusEffect
+resync** added for the theme-live-update fix: switching away from
+Discover and back does **not** reset the collapse state. Verified
+directly — collapsed via a pan, switched to Account and back, still
+collapsed. This makes sense once you look at what the resync actually
+sends (chargers/location/selection/theme data messages) versus what
+drives collapse (page-local DOM/CSS state, untouched by any message)
+— but it was checked, not inferred from that reasoning alone. Also
+checked: the 5-second timer keeps running even while the screen is
+in the background (switched to Account before 5s elapsed, waited there
+past 5s, returned to Discover — already collapsed). Neither of these
+needed a fix; both are reported as observed behavior.
+
+**Honest scope note, same standard as the theme-toggle work**: verified
+via Playwright against the web host only (`DiscoverMap.web.tsx`) — the
+same architectural fact from last round means this cannot exercise
+`DiscoverMap.tsx`'s real `react-native-webview` bridge at all. Nothing
+about this specific change touches the RN↔WebView message bridge,
+`injectJavaScript`, or message timing — it's pure in-page Leaflet
+control/CSS/event-listener logic, identical on both hosts since both
+load the exact same HTML string — so there's less surface area for a
+native-specific gap than the theme-switching work had. That said, this
+has not been confirmed on a real device, and isn't being claimed as
+such.
+
 ## The theme-live-update gap Playwright couldn't have caught (2026-09)
 
 Reported: theme-following didn't actually update the map on a real

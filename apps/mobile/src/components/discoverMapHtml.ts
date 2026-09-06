@@ -38,6 +38,27 @@
  * below to fit each theme (dark-on-light-map, light-on-dark-map) while
  * keeping the same text/links, same size class, same corner, never
  * hidden — content and prominence unchanged, only its chrome.
+ *
+ * Collapse-after-interaction (2026-09): relocating attribution off the
+ * map entirely (e.g. to an Account/Settings screen) was researched and
+ * explicitly rejected — CARTO's own terms tie the requirement to
+ * "Persons viewing the basemap", and OpenStreetMap Foundation's own
+ * attribution guidelines only sanction an About-menu/settings location
+ * as a *rediscovery* path for attribution already shown on the map at
+ * least once, never as a full substitute. What OSMF's guidelines do
+ * sanction, and what's implemented below: the on-map credit may collapse
+ * "automatically on map interaction such as panning, clicking, or
+ * zooming" or "automatically after five seconds", provided "the user
+ * must still be able to find the licence information if they look for
+ * it, for example from an '(i)' button in the corner of the map." Full
+ * attribution shows on load; collapses on the user's first pan/zoom or
+ * after 5s, whichever comes first, into a persistent "(i)" badge in the
+ * same corner; tapping it re-expands. A manual re-expand stays expanded
+ * for the rest of that page's lifetime (no re-collapse timer/listener is
+ * re-armed) — a deliberate choice: re-collapsing something a user just
+ * asked to see would read as the credit vanishing while they're still
+ * reading it, which is worse than a map that stays slightly less tidy
+ * for the remainder of one session.
  */
 export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" = "dark"): string {
   return `<!DOCTYPE html>
@@ -94,6 +115,36 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
   }
   html[data-theme="light"] .leaflet-control-attribution { color: #57606A; }
   html[data-theme="light"] .leaflet-control-attribution a { color: #2C5F58; }
+
+  /* Collapsed state: .kelo-attr-full (Leaflet's own real attribution
+     content, untouched, real links intact) and .kelo-attr-badge (a
+     small "(i)" indicator) are siblings inside the same
+     .leaflet-control-attribution element — see the JS below for why
+     it's structured this way rather than as a separate DOM node
+     elsewhere on the page. Only one is ever visible at a time. */
+  .kelo-attr-badge { display: none; }
+  .leaflet-control-attribution.kelo-attr-collapsed {
+    padding: 0;
+    /* Leaflet's own default line-height/padding on this element already
+       gives a ~22px tall control — width/height match that so the
+       collapsed badge is a small, neat circle, not a stretched pill. */
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+  }
+  .leaflet-control-attribution.kelo-attr-collapsed .kelo-attr-full { display: none; }
+  .leaflet-control-attribution.kelo-attr-collapsed .kelo-attr-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    font-family: ui-monospace, monospace;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -157,6 +208,59 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
     maxZoom: 20,
     attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
+
+  // Collapse-after-interaction — see the file-level doc comment above
+  // for the researched, OSMF-sanctioned pattern this implements.
+  // Leaflet's Control.Attribution only ever rewrites its container's
+  // innerHTML on construction and on addAttribution/removeAttribution/
+  // setPrefix (none of which this code calls again after the line
+  // above), so it's safe to wrap that real content once here — Leaflet
+  // itself won't come back later and clobber it.
+  var attrCollapsed = false;
+  (function setUpCollapsibleAttribution() {
+    var container = map.attributionControl.getContainer();
+    if (!container) return; // defensive only — always present with attributionControl:true
+    container.innerHTML =
+      '<span class="kelo-attr-full">' + container.innerHTML + '</span>' +
+      '<span class="kelo-attr-badge" title="Map data attribution">(i)</span>';
+    var badge = container.querySelector('.kelo-attr-badge');
+
+    function collapse() {
+      if (attrCollapsed) return;
+      attrCollapsed = true;
+      container.classList.add('kelo-attr-collapsed');
+    }
+    // Deliberately does NOT re-arm any collapse trigger — see the
+    // file-level comment for why a manual expand stays expanded for the
+    // rest of this page's lifetime instead of re-collapsing again.
+    function expand() {
+      attrCollapsed = false;
+      container.classList.remove('kelo-attr-collapsed');
+    }
+    badge.addEventListener('click', function (e) {
+      e.stopPropagation(); // don't also let this reach map's own 'click' -> backgroundTap
+      expand();
+    });
+
+    // Whichever happens first — collapse. map.once() auto-removes each
+    // listener after it fires once, so if the timer wins, the pan/zoom
+    // listeners are simply never triggered later (Leaflet's own
+    // Evented#once still lets you call .off() on an unfired listener,
+    // done below for whichever of the pair didn't win).
+    var timerId = setTimeout(function () {
+      map.off('dragstart', onInteract);
+      map.off('zoomstart', onInteract);
+      collapse();
+    }, 5000);
+    function onInteract() {
+      clearTimeout(timerId);
+      map.off('dragstart', onInteract);
+      map.off('zoomstart', onInteract);
+      collapse();
+    }
+    map.once('dragstart', onInteract);
+    map.once('zoomstart', onInteract);
+  })();
 
   function post(message) {
     var payload = JSON.stringify(message);
@@ -325,6 +429,7 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
         currentTheme: document.documentElement.getAttribute('data-theme'),
         currentTileUrl: tileLayer.getAttribution ? tileLayer._url : null,
         zoom: map.getZoom(),
+        attributionCollapsed: attrCollapsed,
       };
     },
   };
