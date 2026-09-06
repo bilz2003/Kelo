@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Charger } from "@kelo/core";
 import { buildMapHtml } from "./discoverMapHtml";
 
@@ -68,6 +69,22 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     post({ type: "setTheme", mode: themeMode });
   }, [themeMode]);
 
+  // Same focus-resync fix as DiscoverMap.tsx — see its own comment for
+  // the full reasoning. Kept here too for symmetry even though the
+  // iframe transport doesn't share native's specific "is the WebView on
+  // a currently-inactive tab" question; costs nothing and closes the
+  // same class of gap if it turns out to exist here too.
+  useFocusEffect(
+    useCallback(() => {
+      if (!readyRef.current) return;
+      post({ type: "setChargers", chargers: chargerPayload() });
+      post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
+      post({ type: "setSelected", chargerId: selectedId ?? null });
+      post({ type: "setTheme", mode: themeMode });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [themeMode, selectedId, deviceLocation?.lat, deviceLocation?.lng, chargers]),
+  );
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
@@ -82,6 +99,9 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
         post({ type: "setChargers", chargers: chargerPayload() });
         post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
         post({ type: "setSelected", chargerId: selectedId ?? null });
+        // See DiscoverMap.tsx's 'ready' handler for why this belongs in
+        // every resync burst, not just the live-toggle effect above.
+        post({ type: "setTheme", mode: themeMode });
         if (deviceLocation) {
           post({ type: "setCenter", lat: deviceLocation.lat, lng: deviceLocation.lng });
         }
@@ -95,7 +115,7 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chargers, selectedId, deviceLocation]);
+  }, [chargers, selectedId, deviceLocation, themeMode]);
 
   const bg = themeMode === "light" ? "#E5E7EB" : "#12161C";
 

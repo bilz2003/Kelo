@@ -254,6 +254,80 @@ background override silently lost to Leaflet's own more-specific rule.
 Confirmed via a live computed-style check, not assumed, then fixed by
 matching that same specificity.)
 
+## The theme-live-update gap Playwright couldn't have caught (2026-09)
+
+Reported: theme-following didn't actually update the map on a real
+device, despite the previous round's Playwright verification calling it
+"confirmed live." Diagnosed before touching anything:
+
+**Definitive, provable fact**: Playwright's testing runs against
+`expo start --web`, and Metro's platform-extension resolution
+*guarantees* the web bundle uses `DiscoverMap.web.tsx` (the `<iframe>` +
+`window.postMessage` host) — `DiscoverMap.tsx` (the real
+`react-native-webview` host) cannot even be included in a web bundle,
+since that package has no web implementation at all. So the previous
+"confirmed live" claim was true for the web host and said *nothing*
+whatsoever about the native one — not a near-miss, a complete blind
+spot by construction. This part didn't need a device to establish; it
+follows directly from how the two files are wired.
+
+**Checked, not assumed**: whether `react-native-webview`'s native bridge
+mechanism itself was actually sound. Read its own source
+(`node_modules/react-native-webview`, v13.16.1) directly:
+- Found and fixed a real doc-comment error: this file used to claim
+  message-events land on `document` on iOS / `window` on Android — the
+  *opposite* of what the native source actually does (iOS:
+  `RNCWebViewImpl.m`'s `postMessage:` dispatches on `window`; Android:
+  `RNCWebViewManagerImpl.kt`'s dispatches on `document`). Never actually
+  broke anything, purely because both targets were already listened on
+  regardless of platform — but wrong is wrong, corrected in the code.
+- More importantly: `.postMessage()` and `.injectJavaScript()` are **the
+  same underlying native call** in this library version. postMessage's
+  own iOS implementation is literally `[self injectJavaScript:
+  "window.dispatchEvent(new MessageEvent(...))"]`; its Android
+  implementation calls the exact same `evaluateJavascriptWithFallback`
+  injectJavaScript itself calls. So switching to injectJavaScript, on
+  its own, could not have been "the fix" — there's no reliability gap
+  between the two to close that way, and claiming otherwise would have
+  been cosmetic, not a real fix.
+
+**What actually changed**, then, given switching APIs alone proves
+nothing: native (`DiscoverMap.tsx`) now calls
+`window.__kelo.applyMessage(...)` directly via `injectJavaScript`
+instead of building a MessageEvent and dispatching it — same native
+transport, one less layer of event-dispatch/listener-matching
+indirection to go wrong. And, the part that's a genuine, provable fix
+regardless of whatever the real underlying platform behavior turns out
+to be: the `'ready'` resync handshake never included the current theme
+(only chargers/location/selection) — meaning if the page ever
+reinitializes after its first paint for *any* reason (a real, if
+unconfirmed-on-this-device, category of behavior for
+`react-native-webview` combined with `react-native-screens`' default
+view-detachment for inactive tabs), it would come back on whatever
+theme was active at the very first app launch, permanently, with no
+mechanism to self-correct. Fixed by including theme in every `'ready'`
+burst, and — the most robust piece — by re-pushing the *entire* current
+state (chargers, location, selection, theme) every time this screen
+regains focus via `useFocusEffect`, the same pattern already used for
+`DiscoverListScreen`'s own charger refetch. This closes the gap
+regardless of the exact underlying cause: even if every single
+live-while-hidden push were silently dropped for a reason this
+investigation couldn't pin down without a device, the map is
+guaranteed correct again the moment it's actually looked at.
+
+**Honest limit, stated plainly**: none of the above could be exercised
+against the real native bridge — no iOS Simulator or Android emulator
+is available in this environment, and Playwright cannot touch
+`DiscoverMap.tsx` at all (see above). Everything here is verified as
+far as it's possible to verify without a device: the code compiles, the
+web host (proven to share the identical HTML/message-handling logic)
+still updates live with no regression, and the mechanistic claims about
+`postMessage`/`injectJavaScript` are backed by reading the installed
+package's own source rather than assumed. Whether this actually
+resolves it on a real phone is **not confirmed** and cannot honestly be
+claimed as confirmed from here — that needs the person reading this to
+test it on their own device.
+
 ## Gesture tuning beyond the original build (2026-09)
 
 Re-examined Leaflet's own Map options (leafletjs.com/reference.html) for

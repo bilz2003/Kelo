@@ -270,15 +270,38 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
     }
     applyMessage(msg);
   }
-  // react-native-webview delivers RN->WebView messages via a 'message'
-  // event on document on iOS and on window on Android — a well-documented
-  // platform difference, so both are listened on (harmless no-op on
-  // whichever platform doesn't use it). The plain-iframe web host posts
-  // via window.postMessage, which only ever arrives on window — covered
-  // by the same window listener.
+  // react-native-webview's .postMessage() dispatches a 'message' event on
+  // *window* on iOS and on *document* on Android (checked directly
+  // against its own native source this session — apple/RNCWebViewImpl.m
+  // and android/.../RNCWebViewManagerImpl.kt — since an earlier version
+  // of this comment had the two platforms backwards; that inaccuracy
+  // never actually broke anything only because both targets are listened
+  // on here regardless of platform). DiscoverMap.tsx (native) no longer
+  // actually goes through this path at all — see window.__kelo.
+  // applyMessage above, which it calls directly via injectJavaScript
+  // instead — but this listener is kept for exactly the plain-iframe web
+  // host below, which has no injectJavaScript equivalent and still posts
+  // via window.postMessage (only ever arrives on window, covered by the
+  // same window listener).
   document.addEventListener('message', onIncoming);
   window.addEventListener('message', onIncoming);
 
+  // applyMessage exposed directly — the native host (DiscoverMap.tsx)
+  // calls this straight via injectJavaScript() instead of going through
+  // the postMessage/MessageEvent/addEventListener indirection below.
+  // Real, checked reason: react-native-webview's .postMessage() and
+  // .injectJavaScript() are the same underlying native call in this
+  // library (confirmed against its own source — postMessage's iOS/
+  // Android implementations both just build a MessageEvent-dispatching
+  // script string and run it exactly the way injectJavaScript runs any
+  // other script), so this doesn't change *whether* the native bridge
+  // delivers — it removes the MessageEvent construction/dispatch/
+  // listener-matching indirection as one more moving part, calling
+  // straight into the same function the message-event listener below
+  // would have called anyway. The web host (DiscoverMap.web.tsx) has no
+  // injectJavaScript equivalent for a plain <iframe>, so it still goes
+  // through postMessage — both paths end up at this same function.
+  //
   // Diagnostics surface for automated verification (Playwright, run
   // against the web/.web.tsx host where the map's DOM is directly
   // reachable) — real, inspectable evidence rather than an assumption:
@@ -291,6 +314,7 @@ export function buildMapHtml(cartoApiKey: string, initialMode: "light" | "dark" 
   // switch actually reached the tile layer, not just the DOM attribute.
   window.__kelo = {
     bridgeMessageCount: 0,
+    applyMessage: applyMessage,
     getDiagnostics: function () {
       var pane = document.querySelector('.leaflet-map-pane');
       return {

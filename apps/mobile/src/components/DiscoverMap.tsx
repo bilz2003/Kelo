@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
+import { useFocusEffect } from "@react-navigation/native";
 import { Charger } from "@kelo/core";
 import { buildMapHtml } from "./discoverMapHtml";
 
@@ -50,8 +51,25 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
   const chargerPayload = () =>
     chargers.filter((c) => c.lat != null && c.lng != null).map((c) => ({ id: c.id, lat: c.lat, lng: c.lng }));
 
+  // Real finding, checked against react-native-webview 13.16.1's own
+  // native source (apple/RNCWebViewImpl.m, android/.../
+  // RNCWebViewManagerImpl.kt), not assumed: .postMessage() and
+  // .injectJavaScript() are THE SAME underlying native call in this
+  // library — postMessage's iOS implementation is literally
+  // `[self injectJavaScript: "window.dispatchEvent(new MessageEvent(...))"]`,
+  // and its Android implementation is the same
+  // `webView.evaluateJavascriptWithFallback(...)` injectJavaScript
+  // itself calls. So switching this to injectJavaScript would not
+  // change delivery reliability at all — it would just skip building the
+  // MessageEvent wrapper, calling the page's logic directly instead (see
+  // window.__kelo.applyMessage below). Real value, but not a fix for
+  // "does this reach the page" — see the focus-resync effect below for
+  // the part of this that's an actual fix.
   const post = (message: Record<string, unknown>) => {
-    webViewRef.current?.postMessage(JSON.stringify(message));
+    const json = JSON.stringify(message);
+    webViewRef.current?.injectJavaScript(
+      `window.__kelo && window.__kelo.applyMessage && window.__kelo.applyMessage(${json}); true;`,
+    );
   };
 
   // Each of these fires only when the underlying value actually changes
@@ -74,14 +92,44 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
     post({ type: "setSelected", chargerId: selectedId ?? null });
   }, [selectedId]);
 
-  // Live theme switch — the WebView never reloads, so this is the only
-  // way a toggle made while the map is already open reaches it; the
-  // initial paint is handled separately by baking themeMode into the
-  // useMemo above, not by this effect firing on mount.
+  // Live theme switch — pushed the moment the prop changes, wherever the
+  // app currently is (this fires from a Context update, not from
+  // anything tab/focus-related — confirmed live on web: toggling from
+  // the Account tab fires the real tile request immediately, before ever
+  // switching back to Discover). Kept as belt-and-suspenders alongside
+  // the focus-resync effect below, not replaced by it — that effect only
+  // guarantees eventual correctness *on return* to this screen; this one
+  // is what makes the switch visible in real time if the map happens to
+  // already be the screen on top when it's toggled.
   useEffect(() => {
     if (!readyRef.current) return;
     post({ type: "setTheme", mode: themeMode });
   }, [themeMode]);
+
+  // Real fix, not a cosmetic one: this project found no way to prove
+  // from code alone that a live-while-hidden postMessage/injectJavaScript
+  // call reliably reaches a WebView sitting on a currently-inactive tab
+  // on a real device — react-native-webview's own source confirms
+  // postMessage and injectJavaScript are literally the same native call,
+  // so switching between them (done above) cannot be the actual fix for
+  // that class of gap if it exists. What genuinely closes it regardless
+  // of the underlying platform reason: re-push the full current state
+  // every time this screen regains focus, exactly like
+  // DiscoverListScreen's own useFocusEffect refetch (added for the same
+  // "state that can go stale while this screen isn't the one on top"
+  // reasoning). Even if every single live-while-hidden push were
+  // silently dropped, the map would still be correct the moment it's
+  // actually looked at again.
+  useFocusEffect(
+    useCallback(() => {
+      if (!readyRef.current) return;
+      post({ type: "setChargers", chargers: chargerPayload() });
+      post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
+      post({ type: "setSelected", chargerId: selectedId ?? null });
+      post({ type: "setTheme", mode: themeMode });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [themeMode, selectedId, deviceLocation?.lat, deviceLocation?.lng, chargers]),
+  );
 
   const handleMessage = (event: WebViewMessageEvent) => {
     let msg: { type: string; chargerId?: number };
@@ -95,6 +143,17 @@ export function DiscoverMap({ chargers, selectedId, onPinTap, onBackgroundTap, d
       post({ type: "setChargers", chargers: chargerPayload() });
       post({ type: "setDeviceLocation", lat: deviceLocation?.lat ?? null, lng: deviceLocation?.lng ?? null });
       post({ type: "setSelected", chargerId: selectedId ?? null });
+      // Real gap this fixes: 'ready' can legitimately fire more than
+      // once — not just on first load. buildMapHtml bakes the *initial*
+      // theme into the page's own HTML string, so if the page ever
+      // reinitializes after that first paint for any reason, it reloads
+      // with whatever theme was active at the very first mount, not the
+      // current one — and until this fix, this resync burst never
+      // included theme at all, so a reinitialize would silently strand
+      // the map on a stale theme forever, immune to this same handshake
+      // correcting it. Including it here means every 'ready' — first or
+      // Nth — re-establishes the actually-current theme.
+      post({ type: "setTheme", mode: themeMode });
       if (deviceLocation) {
         post({ type: "setCenter", lat: deviceLocation.lat, lng: deviceLocation.lng });
       }
