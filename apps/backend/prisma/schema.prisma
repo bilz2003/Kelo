@@ -116,7 +116,7 @@ model Charger {
   hostCost          Float? // private — host's own £/kWh cost
   connectionRoute   ConnectionRoute
   ocppChargePointId String? // set if connectionRoute = OCPP — the identity a real charge point connects to OcppCentralSystem with (ws://.../{ocppChargePointId})
-  enodeChargerId    String? // set if connectionRoute = ENODE — Enode's own charger id (GET/POST /chargers/{chargerId}), confirmed via their real API; not a vehicle id, despite this field's original name
+  enodeChargerId    String?         @unique // set if connectionRoute = ENODE — Enode's own charger id (GET/POST /chargers/{chargerId}), confirmed via their real API; not a vehicle id, despite this field's original name. @unique added when the real Link flow was built — a real device now genuinely gets tied to exactly one Charger row, not just conventionally; Postgres allows any number of NULLs under a unique index, so non-Enode chargers are unaffected.
   available         Boolean         @default(true)
   photoKeys         String[]        @default([]) // S3 object keys (charger-photos/{ownerId}/{uuid}.ext) — never a raw URL, bucket is private; see PhotosService
   createdAt         DateTime        @default(now())

@@ -145,6 +145,162 @@ on a real, live-tracked session's accumulated energy) is independently
 verified for real, using self-constructed but correctly-signed deliveries;
 an actual delivery *from* Enode is not.
 
+## The real end-user Link flow (2026-09)
+
+Add Charger now genuinely requires a real, successful Enode Link before
+an Enode-route charger can be created at all — a hard, server-side
+block, not a soft warning. This is the real end-user flow, distinct
+from the sandbox-dashboard virtual-asset creation above (which is a
+developer-testing mechanism, not something a real driver/host ever
+sees or needs).
+
+### Research — Enode's docs are now behind a login wall
+
+`developers.enode.com` redirects to `platform.enode.com`, and every
+page there (docs *and* API reference) now requires signing in — a real,
+current change, not assumed unchanged from older third-party summaries.
+With direct doc access blocked, the real request/response shape was
+confirmed the same way this project has always preferred when docs
+don't cooperate: live calls against the real sandbox API with this
+project's own credentials, reading Enode's own (unusually detailed)
+validation errors to calibrate each field:
+
+- `POST /users/{userId}/link` — confirmed live. Required body fields,
+  confirmed via real 400s that enumerate every valid value:
+  - `scopes`: array from a fixed real enum — `charger:read:data` and
+    `charger:control:charging` are what this app actually uses,
+    matching exactly what `EnodeChargerAdapter` already calls.
+  - `language`: also required (not optional, contrary to some stale
+    third-party summaries) — `"browser"` is a real accepted value,
+    letting the hosted Link UI follow the browser/device's own locale.
+  - `redirectUri`: accepted with a custom URL scheme
+    (`kelo://enode-link-callback`) without complaint — confirmed live,
+    not assumed — which is what makes `expo-web-browser`'s
+    `WebBrowser.openAuthSessionAsync` usable here at all (it needs a
+    real scheme redirect to detect completion, the same reason this app
+    already uses a WebView for maps instead of a native SDK: staying
+    Expo Go-compatible).
+  - `vendorType: "charger"` (optional): confirmed live to actually
+    filter the hosted Link UI to charger brands only (Charge Amps,
+    Easee, Garo, go-e, Heidelberg, KEBA, myenergi, Tesla, Wallbox,
+    Zaptec were shown) — verified by actually loading the real returned
+    `linkUrl` in a real browser, not assumed from the field's name.
+  - Response: `{ linkUrl, linkToken }` — only `linkUrl` is used here
+    (opened via `WebBrowser.openAuthSessionAsync`); `linkToken` is for
+    Enode's native Link SDK, which this app deliberately doesn't use.
+- `GET /users/{userId}/chargers` — confirmed live against both a
+  brand-new userId (real empty `{data: []}`) and this project's
+  existing linked sandbox device (real non-empty array; each `id` is
+  the same real UUID `EnodeChargerAdapter` already expects as
+  `enodeChargerId`).
+- `GET /chargers/{chargerId}` — confirmed to include the owning
+  `userId` directly, which is what makes server-side ownership
+  verification possible (below) without needing a full list fetch.
+
+### One Enode user per Kelo host, not per charger
+
+`enodeUserIdFor(ownerId)` → `kelo-host-{ownerId}`, deterministic, not
+stored separately. Matches Enode's own model (a real end user links
+their real hardware account once, potentially adding more devices to it
+later) and this app's (one host account, potentially several chargers)
+— a second Enode-route charger added later by the same host reuses the
+same linked Enode account rather than starting over.
+
+### The flow
+
+1. `POST /chargers/enode/link-session` (`EnodeLinkService.createLinkSession`)
+   — snapshots this host's *current* linked charger ids from Enode
+   (`existingChargerIds`), then starts a real Link session, returning
+   `{ linkUrl, existingChargerIds }`.
+2. AddChargerScreen opens `linkUrl` via
+   `WebBrowser.openAuthSessionAsync(linkUrl, "kelo://enode-link-callback")`
+   — confirmed live even on the web preview (Playwright observed a real
+   popup to the real `sandbox.link.enode.com` URL), and this is exactly
+   the mechanism the redirectUri field above was confirmed to support.
+3. If the result isn't `"success"` (cancelled/dismissed), nothing
+   further happens — no charger record exists anywhere at this point,
+   since one is never created until a later, separate, still-gated
+   submit step. Confirmed directly: after every blocked/cancelled
+   attempt during this work, the real `Charger` table showed zero new
+   rows.
+4. On success, `POST /chargers/enode/resolve-link` (with
+   `existingChargerIds` handed back unchanged) re-fetches the host's
+   current linked charger ids and diffs against the snapshot — a few
+   short real retries (not a single immediate check), since Enode's own
+   device discovery isn't necessarily instantaneous the moment the
+   hosted UI redirects back. The real newly-linked device's id is what
+   the client then submits as `enodeChargerId`.
+5. `POST /chargers` (`ChargersService.create`) independently
+   re-verifies — never trusts the client's `enodeChargerId` at face
+   value — by calling `GET /chargers/{enodeChargerId}` directly and
+   confirming its own reported `userId` really is this host's Enode
+   account. A client submitting a plausible-looking but never-linked id
+   is rejected with a real 400, confirmed live.
+6. `Charger.enodeChargerId` now has a real unique constraint (a device
+   should only ever back one Charger row) — confirmed no existing
+   duplicates before adding it, applied via a manually-authored
+   migration + `prisma migrate deploy` after `migrate dev` demanded an
+   interactive destructive-reset prompt this non-interactive environment
+   couldn't satisfy (root cause: a genuine, harmless checksum drift on
+   an already-applied migration file, reconciled directly rather than
+   worked around by resetting real data).
+
+### OCPP-route models: blocked the same way, for the same reason
+
+No real connection can be established for an OCPP-route model yet
+either (see OCPP-INTEGRATION.md — nothing is publicly reachable for
+real hardware to connect to). `ChargersService.create` rejects
+`connectionRoute: OCPP` server-side unconditionally right now
+(`OCPP_ONBOARDING_ENABLED = false`, a single flag to flip once real
+connectivity exists) — confirmed live via a real 400. AddChargerScreen
+shows this plainly (existing `ROUTE_NOTES` copy plus a clear "not
+available yet" notice) with "Add this charger" genuinely disabled, not
+just discouraged.
+
+### Verified live, real evidence
+
+- Attempting `POST /chargers` for an Enode-route model with no
+  `enodeChargerId` at all: real 400, "Link a real charger via Enode
+  before adding it."
+- Attempting it with a fabricated `enodeChargerId` that was never
+  linked: real 400, "This charger isn't linked to your account —
+  complete the Enode Link flow first."
+- Attempting it for any OCPP-route model: real 400, "OCPP charger
+  onboarding isn't available yet..."
+- `GET /chargers/enode/link-session` end to end through this app's own
+  backend: a real `linkUrl` + `existingChargerIds: []` for a
+  never-linked host.
+- `POST /chargers/enode/resolve-link` with nothing actually linked:
+  real `{chargerId: null}`.
+- Real `Charger` table checked directly after every attempt above:
+  zero new rows in any case — nothing partial or orphaned ever gets
+  created regardless of how the flow ends.
+- The real hosted Link UI itself: loaded genuinely (Playwright,
+  confirming `vendorType` filtering as above), and its vendor-login step
+  confirmed a real, honest limitation — **Enode's sandbox Link UI only
+  accepts sign-in with a "virtual account" created via the Enode
+  dashboard's own Sandbox client (Virtual accounts), not arbitrary
+  credentials** (its own on-screen message: *"Sandbox only accepts
+  virtual accounts. In your Enode dashboard, open your Sandbox client
+  and pick or create a virtual account under Virtual accounts."*). Same
+  category of dashboard-only gap as the original virtual-device
+  provisioning above — completing the actual positive-path verification
+  (a real device ending up correctly stored on a real Charger row) needs
+  a real virtual account's username/password from that same dashboard
+  section.
+
+### Still needs a real device, honestly
+
+`WebBrowser.openAuthSessionAsync`'s completion-detection (matching the
+`kelo://enode-link-callback` redirect back to a real native app) is a
+different code path on web (a popup) than on native (the system browser
++ a real registered URL scheme) — confirmed the popup opens correctly
+on web, but the actual redirect-interception behavior that makes
+`result.type === "success"` resolve correctly is a real native
+mechanism this environment has no Simulator/emulator to exercise. Same
+honest standard as the map's WebView work: verified as far as possible
+without a device, not claimed as fully proven on one.
+
 ## Production
 
 No production access yet — real hardware requires going through Enode's

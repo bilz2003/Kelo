@@ -1,20 +1,40 @@
 import React, { useState } from "react";
 import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from "react-native";
-import { Lock } from "lucide-react-native";
+import * as WebBrowser from "expo-web-browser";
+import { Lock, ShieldCheck, TriangleAlert } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { PrimaryButton } from "@/components/Button";
+import { PrimaryButton, GhostButton } from "@/components/Button";
 import { Chip, Toggle } from "@/components/Controls";
 import { CurrencyField } from "@/components/CurrencyField";
 import { PhotosField } from "@/components/PhotosField";
 import { useChargerStore, namesMatch } from "@/state/ChargerStoreContext";
 import { useAuth } from "@/state/AuthContext";
-import { createCharger } from "@/api/chargers";
+import { createCharger, startEnodeLink, resolveEnodeLink } from "@/api/chargers";
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
 import { CHARGER_MODELS, ROUTE_NOTES } from "@/data/mockChargers";
 import { ChargerModelOption } from "@kelo/core";
+
+// Enode's own real Link redirect — must match EnodeLinkService's fixed
+// REDIRECT_URI on the backend exactly (see that file's own comment on
+// why it's not client-suppliable), and app.json's own "scheme": "kelo".
+const ENODE_REDIRECT_URI = "kelo://enode-link-callback";
+
+// A few short, real polling attempts after a successful Link redirect —
+// not a single immediate check. Enode's own device-discovery isn't
+// necessarily instantaneous the moment the hosted Link UI redirects
+// back, so this gives real propagation a real chance before reporting
+// failure.
+const RESOLVE_LINK_ATTEMPTS = 4;
+const RESOLVE_LINK_DELAY_MS = 1500;
+
+type EnodeLinkState = "idle" | "linking" | "resolving" | "linked" | "failed";
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAdded: () => void }) {
   const { tokens } = useTheme();
@@ -34,7 +54,72 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const canSubmit = !!model && postcode.trim().length > 0;
+  // Real, hard-gated Enode Link state — not a soft warning. enodeChargerId
+  // only ever gets set once resolveEnodeLink has independently confirmed
+  // (against Enode's own API, server-side) that a real device now exists
+  // under this host's account that wasn't there before this attempt.
+  const [enodeLinkState, setEnodeLinkState] = useState<EnodeLinkState>("idle");
+  const [enodeChargerId, setEnodeChargerId] = useState<string | null>(null);
+  const [enodeLinkMessage, setEnodeLinkMessage] = useState<string | null>(null);
+
+  const selectModel = (m: ChargerModelOption) => {
+    setModel(m);
+    // Switching models mid-flow invalidates whatever was just linked —
+    // a device linked for one model shouldn't silently attach itself to
+    // a different one picked afterward.
+    setEnodeLinkState("idle");
+    setEnodeChargerId(null);
+    setEnodeLinkMessage(null);
+  };
+
+  const startLink = async () => {
+    if (!model || model.route !== "enode") return;
+    setEnodeLinkState("linking");
+    setEnodeLinkMessage(null);
+    try {
+      const { linkUrl, existingChargerIds } = await startEnodeLink();
+      const result = await WebBrowser.openAuthSessionAsync(linkUrl, ENODE_REDIRECT_URI);
+      if (result.type !== "success") {
+        // Cancelled or dismissed — no charger record exists anywhere at
+        // this point (nothing is created until real submission below,
+        // and that's still hard-blocked), so there's nothing to clean up
+        // here beyond resetting back to a retryable state.
+        setEnodeLinkState("idle");
+        setEnodeLinkMessage("Link cancelled — you can try again whenever you're ready.");
+        return;
+      }
+      setEnodeLinkState("resolving");
+      let resolvedId: string | null = null;
+      for (let attempt = 0; attempt < RESOLVE_LINK_ATTEMPTS && !resolvedId; attempt++) {
+        if (attempt > 0) await sleep(RESOLVE_LINK_DELAY_MS);
+        const { chargerId } = await resolveEnodeLink(existingChargerIds);
+        resolvedId = chargerId;
+      }
+      if (resolvedId) {
+        setEnodeChargerId(resolvedId);
+        setEnodeLinkState("linked");
+      } else {
+        setEnodeLinkState("failed");
+        setEnodeLinkMessage("Couldn't confirm your charger was linked — try again.");
+      }
+    } catch (err) {
+      setEnodeLinkState("failed");
+      setEnodeLinkMessage(err instanceof ApiError ? err.message : "Couldn't start the connection — try again.");
+    }
+  };
+
+  // OCPP onboarding isn't live yet (see ChargersService — this is a real
+  // server-side block too, not just a UI restriction) — Add Charger can't
+  // complete for an OCPP-route model at all right now, full stop.
+  const isOcppModel = model?.route === "ocpp";
+  const isEnodeModel = model?.route === "enode";
+  const enodeLinked = isEnodeModel && enodeLinkState === "linked" && !!enodeChargerId;
+
+  const canSubmit =
+    !!model &&
+    postcode.trim().length > 0 &&
+    !isOcppModel &&
+    (!isEnodeModel || enodeLinked);
   const existingNames = siblingNames(null);
   const isDuplicate = name.trim() !== "" && existingNames.some((n) => namesMatch(n, name));
 
@@ -55,7 +140,8 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         overstayRate,
         noShowFee,
         hostCost,
-        connectionRoute: model.route === "ocpp" ? "OCPP" : "ENODE",
+        connectionRoute: "ENODE",
+        enodeChargerId: enodeChargerId ?? undefined,
         available: true,
         photos: photos.map((p) => p.key),
       });
@@ -88,15 +174,56 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
           style={{ marginHorizontal: -20, marginBottom: model ? 12 : 20 }}
         >
           {CHARGER_MODELS.map((m) => (
-            <Chip key={m.title} active={model?.title === m.title} onPress={() => setModel(m)}>{m.title}</Chip>
+            <Chip key={m.title} active={model?.title === m.title} onPress={() => selectModel(m)}>{m.title}</Chip>
           ))}
         </ScrollView>
         {model && (
-          <View style={{ backgroundColor: tokens.surface, borderLeftWidth: 2, borderLeftColor: tokens.cyan, borderTopRightRadius: radii.lg, borderBottomRightRadius: radii.lg, padding: 14, marginBottom: 20 }}>
+          <View style={{ backgroundColor: tokens.surface, borderLeftWidth: 2, borderLeftColor: isOcppModel ? tokens.danger : tokens.cyan, borderTopRightRadius: radii.lg, borderBottomRightRadius: radii.lg, padding: 14, marginBottom: 20 }}>
             <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.text, marginBottom: 4 }}>
               {model.power} · Type 2{cableProvided ? " · tethered" : ""}
             </Text>
-            <Text style={{ fontSize: 12, color: tokens.textSoft, lineHeight: 17 }}>{ROUTE_NOTES[model.route]}</Text>
+            <Text style={{ fontSize: 12, color: tokens.textSoft, lineHeight: 17, marginBottom: isOcppModel || isEnodeModel ? 12 : 0 }}>{ROUTE_NOTES[model.route]}</Text>
+
+            {isOcppModel && (
+              <View style={{ flexDirection: "row", gap: 8, backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.md, padding: 12 }}>
+                <TriangleAlert size={14} color={tokens.danger} style={{ marginTop: 1 }} />
+                <Text style={{ flex: 1, fontSize: 12, color: tokens.text, lineHeight: 17 }}>
+                  OCPP charger onboarding isn't available yet — this requires Kelo's own servers to be live first. You can't list an OCPP charger right now.
+                </Text>
+              </View>
+            )}
+
+            {isEnodeModel && (
+              <View>
+                {enodeLinked ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: tokens.cyanTint10, borderWidth: 1, borderColor: tokens.cyanTint30, borderRadius: radii.md, padding: 12 }}>
+                    <ShieldCheck size={15} color={tokens.cyan} />
+                    <Text style={{ flex: 1, fontSize: 12.5, color: tokens.text }}>Charger connected via Enode.</Text>
+                  </View>
+                ) : (
+                  <>
+                    <GhostButton
+                      onPress={startLink}
+                      disabled={enodeLinkState === "linking" || enodeLinkState === "resolving"}
+                      style={{ paddingVertical: 11 }}
+                    >
+                      {enodeLinkState === "linking" || enodeLinkState === "resolving" ? (
+                        <ActivityIndicator color={tokens.text} />
+                      ) : (
+                        <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13.5, color: tokens.text }}>
+                          {enodeLinkState === "failed" ? "Try connecting again" : "Connect your charger"}
+                        </Text>
+                      )}
+                    </GhostButton>
+                    {enodeLinkMessage && (
+                      <Text style={{ fontSize: 11.5, color: enodeLinkState === "failed" ? tokens.danger : tokens.textSoft, lineHeight: 16, marginTop: 8 }}>
+                        {enodeLinkMessage}
+                      </Text>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
           </View>
         )}
 
@@ -214,7 +341,11 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         </PrimaryButton>
         {!canSubmit && (
           <Text style={{ marginTop: 10, fontSize: 11.5, color: tokens.textSoft, textAlign: "center" }}>
-            Pick a charger model and add your postcode to continue.
+            {isOcppModel
+              ? "OCPP charging isn't available yet — Kelo's own servers need to be live first."
+              : isEnodeModel && !enodeLinked
+                ? "Connect your charger via Enode before you can list it."
+                : "Pick a charger model and add your postcode to continue."}
           </Text>
         )}
       </View>

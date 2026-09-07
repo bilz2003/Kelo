@@ -40,22 +40,24 @@ interface GhostButtonProps {
   children: React.ReactNode;
   onPress: () => void;
   tone?: "default" | "danger";
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-export function GhostButton({ children, onPress, tone = "default", style }: GhostButtonProps) {
+export function GhostButton({ children, onPress, tone = "default", disabled, style }: GhostButtonProps) {
   const { tokens } = useTheme();
-  const textColor = tone === "danger" ? tokens.danger : tokens.text;
+  const textColor = disabled ? tokens.textSoft : tone === "danger" ? tokens.danger : tokens.text;
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.base,
         {
           backgroundColor: "transparent",
           borderWidth: 1,
           borderColor: tone === "danger" ? "rgba(232,132,107,0.35)" : tokens.hair,
-          opacity: pressed ? 0.85 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
         },
         style,
       ]}

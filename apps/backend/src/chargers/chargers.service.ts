@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { BookingStatus, Prisma } from "@prisma/client";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BookingStatus, ConnectionRoute, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { GeocodingService } from "../geocoding/geocoding.service";
 import { haversineMiles } from "../geocoding/haversine";
 import { PhotosService } from "../photos/photos.service";
+import { EnodeLinkService } from "./enode-link.service";
 import { DEFAULT_SEARCH_ORIGIN } from "./search-origin";
 import { CreateChargerDto } from "./dto/create-charger.dto";
 import { UpdateChargerDto } from "./dto/update-charger.dto";
@@ -47,6 +48,7 @@ export class ChargersService {
     private readonly prisma: PrismaService,
     private readonly geocoding: GeocodingService,
     private readonly photos: PhotosService,
+    private readonly enodeLink: EnodeLinkService,
   ) {}
 
   createPhotoUploadUrl(ownerId: number, contentType: string) {
@@ -60,7 +62,57 @@ export class ChargersService {
     return this.geocoding.geocodeSearchText(text);
   }
 
+  // The real Add Charger flow for an Enode-route model — see
+  // EnodeLinkService for the researched real Link API shape.
+  startEnodeLink(ownerId: number) {
+    return this.enodeLink.createLinkSession(ownerId);
+  }
+
+  resolveEnodeLink(ownerId: number, existingChargerIds: string[]) {
+    return this.enodeLink.resolveNewCharger(ownerId, existingChargerIds);
+  }
+
+  /**
+   * Real, hard-blocking gates — not soft warnings — on what connectionRoute
+   * a charger can actually be created with right now:
+   *
+   * - OCPP: no real connection can be established yet (Kelo's own OCPP
+   *   central system has nothing publicly reachable for real hardware to
+   *   connect to — see OCPP-INTEGRATION.md). Blocked server-side, not
+   *   just hidden in the UI, so this can't be bypassed by calling the API
+   *   directly. Temporary — flip OCPP_ONBOARDING_ENABLED once real
+   *   connectivity exists; nothing else about this method needs to change.
+   * - ENODE: requires a real, already-completed Link (see
+   *   EnodeLinkService) — enodeChargerId must be present *and* verified
+   *   as genuinely belonging to this host's own linked Enode account,
+   *   not merely present. A client fabricating a plausible-looking id
+   *   without ever completing a real Link is exactly the gap this closes;
+   *   trusting a client-supplied id at face value would not be a real
+   *   requirement, just a client-side inconvenience.
+   * - MOCK: intentionally left alone here — not reachable from
+   *   AddChargerScreen (CHARGER_MODELS has no mock-route option), but
+   *   still needed for internal/seed use the same way it always has been
+   *   (see this project's own seeded demo chargers), so this is a UI-only
+   *   restriction for Mock, not an API one.
+   */
+  private static readonly OCPP_ONBOARDING_ENABLED = false;
+
   async create(ownerId: number, dto: CreateChargerDto) {
+    if (dto.connectionRoute === ConnectionRoute.OCPP && !ChargersService.OCPP_ONBOARDING_ENABLED) {
+      throw new BadRequestException(
+        "OCPP charger onboarding isn't available yet — this requires Kelo's own servers to be live first.",
+      );
+    }
+    if (dto.connectionRoute === ConnectionRoute.ENODE) {
+      if (!dto.enodeChargerId) {
+        throw new BadRequestException("Link a real charger via Enode before adding it.");
+      }
+      const verified = await this.enodeLink.verifyChargerBelongsToHost(ownerId, dto.enodeChargerId);
+      if (!verified) {
+        throw new BadRequestException("This charger isn't linked to your account — complete the Enode Link flow first.");
+      }
+    }
+
     const { lat, lng } = await this.geocoding.geocode(dto.postcode);
     const { photos, ...rest } = dto;
     const charger = await this.prisma.charger.create({

@@ -113,6 +113,12 @@ export interface ChargerWriteFields {
   noShowFee: number;
   hostCost?: number;
   connectionRoute: "OCPP" | "ENODE";
+  // Only meaningful (and only checked server-side) when connectionRoute
+  // is ENODE — the real device id from a completed Enode Link flow, see
+  // AddChargerScreen's startLink/resolveEnodeLink. ChargersService
+  // independently re-verifies this against Enode's own API rather than
+  // trusting it at face value.
+  enodeChargerId?: string;
   available?: boolean;
   photos?: string[];
 }
@@ -227,4 +233,17 @@ export function mapOwnerCharger(oc: OwnerCharger, ownerName: string): MyCharger 
     lat: oc.lat ?? undefined,
     lng: oc.lng ?? undefined,
   };
+}
+
+// The real Enode Link flow for Add Charger — see
+// apps/backend/src/chargers/enode-link.service.ts for what these
+// actually do server-side. existingChargerIds is opaque to this layer:
+// captured from startEnodeLink and handed back unchanged to
+// resolveEnodeLink once the hosted Link UI reports completion.
+export function startEnodeLink(): Promise<{ linkUrl: string; existingChargerIds: string[] }> {
+  return apiFetch("/chargers/enode/link-session", { method: "POST" });
+}
+
+export function resolveEnodeLink(existingChargerIds: string[]): Promise<{ chargerId: string | null }> {
+  return apiFetch("/chargers/enode/resolve-link", { method: "POST", body: { existingChargerIds } });
 }

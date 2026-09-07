@@ -7,6 +7,7 @@ import { UpdateChargerDto } from "./dto/update-charger.dto";
 import { DiscoverQueryDto } from "./dto/discover-query.dto";
 import { PhotoUploadUrlDto } from "./dto/photo-upload-url.dto";
 import { SearchLocationDto } from "./dto/search-location.dto";
+import { ResolveEnodeLinkDto } from "./dto/resolve-enode-link.dto";
 
 @Controller("chargers")
 @UseGuards(JwtAuthGuard)
@@ -24,6 +25,23 @@ export class ChargersController {
   @Post()
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateChargerDto) {
     return this.chargersService.create(user.userId, dto);
+  }
+
+  // The real end-user Link flow (not the sandbox-dashboard virtual-asset
+  // creation used for developer testing — see ENODE-INTEGRATION.md).
+  // Starts a real Link session against Enode's API for this host's own
+  // Enode account; the client opens the returned linkUrl via
+  // expo-web-browser and, once it reports completion, calls
+  // enode/resolve-link below with the returned existingChargerIds
+  // unchanged.
+  @Post("enode/link-session")
+  startEnodeLink(@CurrentUser() user: RequestUser) {
+    return this.chargersService.startEnodeLink(user.userId);
+  }
+
+  @Post("enode/resolve-link")
+  resolveEnodeLink(@CurrentUser() user: RequestUser, @Body() dto: ResolveEnodeLinkDto) {
+    return this.chargersService.resolveEnodeLink(user.userId, dto.existingChargerIds);
   }
 
   @Get()
