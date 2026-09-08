@@ -147,9 +147,14 @@ an actual delivery *from* Enode is not.
 
 ## The real end-user Link flow (2026-09)
 
-Add Charger now genuinely requires a real, successful Enode Link before
-an Enode-route charger can be created at all — a hard, server-side
-block, not a soft warning. This is the real end-user flow, distinct
+**Status: fully closed.** Add Charger now genuinely requires a real,
+successful Enode Link before an Enode-route charger can be created at
+all — a hard, server-side block, not a soft warning — and the full
+positive path (Link completes → a real device lands on the account →
+the real device reference is correctly stored on the Charger row) is
+verified end to end against Enode's real sandbox, not just the
+negative/blocked half. See "Verified live, real evidence" below for
+the actual stored value. This is the real end-user flow, distinct
 from the sandbox-dashboard virtual-asset creation above (which is a
 developer-testing mechanism, not something a real driver/host ever
 sees or needs).
@@ -284,22 +289,52 @@ just discouraged.
   virtual accounts. In your Enode dashboard, open your Sandbox client
   and pick or create a virtual account under Virtual accounts."*). Same
   category of dashboard-only gap as the original virtual-device
-  provisioning above — completing the actual positive-path verification
-  (a real device ending up correctly stored on a real Charger row) needs
-  a real virtual account's username/password from that same dashboard
-  section.
+  provisioning above.
+- **The full positive path, driven end to end with a real virtual
+  account** (created via that same dashboard section, with a virtual
+  Wallbox charger attached to it): the hosted Link UI's vendor-login
+  step accepted the real credentials, presented the real attached
+  device ("Pulsar Plus — Ready to connect"), and completing "Connect"
+  made a genuinely new charger appear on the account —
+  `GET /users/kelo-host-83/chargers` went from empty to one real device:
+  `id: "bf1eb046-e964-4307-b873-18b98e3aca65"`, `vendor: "WALLBOX"`,
+  `model: "Pulsar Plus"`, a real `serialNumber`, real capabilities.
+  `POST /chargers/enode/resolve-link` (with the `existingChargerIds: []`
+  snapshot captured before the Link session started) correctly resolved
+  to that same id. `POST /chargers` with `connectionRoute: "ENODE"` and
+  that `enodeChargerId` then succeeded (real 201), and a direct query
+  against the real `Charger` table confirmed the row exactly as
+  returned: `connectionRoute = ENODE`, `enodeChargerId =
+  bf1eb046-e964-4307-b873-18b98e3aca65`. The same request with no
+  `enodeChargerId` was re-confirmed blocked immediately before this
+  (real 400, "Link a real charger via Enode before adding it."), so both
+  halves of the gate are proven against the same account in the same
+  session — not just the negative half. The test charger row was
+  removed afterward (soft-deleted, same as any other charger) since it
+  existed purely to produce this evidence, not as real listing data.
 
-### Still needs a real device, honestly
+### An unrelated real finding worth keeping: Ohme isn't Link-UI-supported
 
-`WebBrowser.openAuthSessionAsync`'s completion-detection (matching the
-`kelo://enode-link-callback` redirect back to a real native app) is a
-different code path on web (a popup) than on native (the system browser
-+ a real registered URL scheme) — confirmed the popup opens correctly
-on web, but the actual redirect-interception behavior that makes
-`result.type === "success"` resolve correctly is a real native
-mechanism this environment has no Simulator/emulator to exercise. Same
-honest standard as the map's WebView work: verified as far as possible
-without a device, not claimed as fully proven on one.
+The original virtual device on this sandbox client's Enode user is an
+**Ohme** charger (created via the separate sandbox-dashboard
+virtual-asset mechanism used for developer verification, not the
+end-user Link flow). Ohme does **not** appear in the hosted Link UI's
+vendor list at all — confirmed against both `vendorType: "charger"` and
+a request with no `vendorType` filter at all, which return the
+identical 10-vendor list (Charge Amps, Easee, Garo, go-e, Heidelberg,
+KEBA, myenergi, Tesla, Wallbox, Zaptec). Clicking "I don't see my
+brand" in the real Link UI leads to a "request this brand" form, not a
+sign-in path — a real dead end, not a client-side filtering bug in this
+app's own code.
+
+Enode's public vendor-integration listings mark Ohme as `Beta` with
+`activation_required` status, which is consistent with what was
+observed here: Ohme support likely exists on Enode's side but needs
+Enode to manually activate it for a given client before it surfaces in
+that client's real Link UI. Worth raising directly with Enode before
+the real production conversation, since Ohme is the vendor this
+project's own existing sandbox device already uses — don't let this
+get lost or rediscovered from scratch later.
 
 ## Production
 
