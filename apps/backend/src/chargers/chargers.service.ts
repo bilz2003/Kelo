@@ -9,6 +9,7 @@ import { DEFAULT_SEARCH_ORIGIN } from "./search-origin";
 import { CreateChargerDto } from "./dto/create-charger.dto";
 import { UpdateChargerDto } from "./dto/update-charger.dto";
 import { DiscoverQueryDto } from "./dto/discover-query.dto";
+import { StatsQueryDto } from "./dto/stats-query.dto";
 
 /**
  * Fields safe to hand to anyone who isn't the charger's owner or a driver
@@ -218,5 +219,53 @@ export class ChargersService {
 
     const sorted = filtered.sort((a, b) => a.distanceMiles - b.distanceMiles);
     return this.photos.resolveChargers(sorted);
+  }
+
+  /**
+   * "This month, across all chargers" for the My Chargers stats cards —
+   * real aggregation over this owner's actual Session/Transaction rows for
+   * an inclusive [start, end] window, never an estimate. Scoped to the
+   * authenticated owner via `booking.charger.ownerId` (the same path every
+   * other host-scoped query here uses), and deliberately not filtered by
+   * `charger.removedAt` — earnings from a charger a host has since
+   * delisted are still earnings they made.
+   *
+   * - sessions: completed Session rows (endedAt set) that ended in range.
+   * - kwh: summed real meter delta (meterEndKwh - meterStartKwh), not
+   *   back-derived from energyCost — cost already has commission and rate
+   *   baked in, so dividing it back out would be a fabricated number.
+   * - earned: summed Transaction.hostNetAmount across every transaction
+   *   type. That column is already the post-commission figure, written
+   *   once when the transaction is recorded (see SessionsService), so this
+   *   is a plain sum — the commission split is not re-derived here.
+   */
+  async getStatsForOwner(ownerId: number, query: StatsQueryDto) {
+    const start = new Date(query.start);
+    const end = new Date(query.end);
+    const ownedByHost = { booking: { charger: { ownerId } } };
+
+    const [sessions, earned] = await Promise.all([
+      this.prisma.session.findMany({
+        // A null endedAt can't satisfy gte/lte, so this already excludes
+        // still-running sessions without an explicit `not: null`.
+        where: { ...ownedByHost, endedAt: { gte: start, lte: end } },
+        select: { meterStartKwh: true, meterEndKwh: true },
+      }),
+      this.prisma.transaction.aggregate({
+        _sum: { hostNetAmount: true },
+        where: { ...ownedByHost, createdAt: { gte: start, lte: end } },
+      }),
+    ]);
+
+    const kwh = sessions.reduce(
+      (total, s) => total + Math.max(0, (s.meterEndKwh ?? 0) - s.meterStartKwh),
+      0,
+    );
+
+    return {
+      sessions: sessions.length,
+      kwh: +kwh.toFixed(1),
+      earned: +(earned._sum.hostNetAmount ?? 0).toFixed(2),
+    };
   }
 }

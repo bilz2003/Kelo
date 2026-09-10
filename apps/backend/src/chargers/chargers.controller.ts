@@ -8,6 +8,7 @@ import { DiscoverQueryDto } from "./dto/discover-query.dto";
 import { PhotoUploadUrlDto } from "./dto/photo-upload-url.dto";
 import { SearchLocationDto } from "./dto/search-location.dto";
 import { ResolveEnodeLinkDto } from "./dto/resolve-enode-link.dto";
+import { StatsQueryDto } from "./dto/stats-query.dto";
 
 @Controller("chargers")
 @UseGuards(JwtAuthGuard)
@@ -54,6 +55,15 @@ export class ChargersController {
   @Get("discover")
   discover(@Query() query: DiscoverQueryDto) {
     return this.chargersService.findDiscover(query);
+  }
+
+  // Same ordering reason as "discover" above — must come before @Get(":id"),
+  // or "stats" parses as an :id and 400s on ParseIntPipe. Real
+  // earnings/activity totals across all of this owner's chargers for the
+  // given period — see ChargersService.getStatsForOwner.
+  @Get("stats")
+  stats(@CurrentUser() user: RequestUser, @Query() query: StatsQueryDto) {
+    return this.chargersService.getStatsForOwner(user.userId, query);
   }
 
   // Same ordering reason as "discover" above — must come before @Get(":id").

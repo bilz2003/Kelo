@@ -247,3 +247,19 @@ export function startEnodeLink(): Promise<{ linkUrl: string; existingChargerIds:
 export function resolveEnodeLink(existingChargerIds: string[]): Promise<{ chargerId: string | null }> {
   return apiFetch("/chargers/enode/resolve-link", { method: "POST", body: { existingChargerIds } });
 }
+
+// Real "across all chargers" totals for a period — the backend aggregates
+// this owner's actual Session/Transaction rows (GET /chargers/stats), never
+// an estimate. sessions/kwh come from completed sessions in range; earned
+// is summed post-commission host_net_amount. Backs My Chargers' stats
+// cards; the period comes from the shared TimeFilterButton.
+export interface ChargerStats {
+  sessions: number;
+  kwh: number;
+  earned: number;
+}
+
+export function getChargerStats(start: Date, end: Date): Promise<ChargerStats> {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+  return apiFetch(`/chargers/stats?${params.toString()}`);
+}

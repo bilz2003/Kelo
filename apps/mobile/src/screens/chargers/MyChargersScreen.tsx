@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Plus, Pencil, ChevronRight, Car, CalendarClock, TriangleAlert } from "lucide-react-native";
@@ -12,8 +12,9 @@ import { useSession } from "@/state/SessionContext";
 import { useAuth } from "@/state/AuthContext";
 import { ExtensionRequestEvent } from "@/api/sessions";
 import { getNextBookingForHost, NextHostBooking } from "@/api/bookings";
+import { getChargerStats, ChargerStats } from "@/api/chargers";
+import { ApiError } from "@/api/client";
 import { computeSessionFinancials } from "@kelo/core";
-import { statsForRange } from "@/data/mockBookings";
 import { defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay } from "@kelo/core";
 import { Charger, TimeRangeValue } from "@kelo/core";
 
@@ -127,16 +128,39 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   const session = useSession();
   const [myCarOverride, setMyCarOverride] = useState(false);
   const [statsRange, setStatsRange] = useState<TimeRangeValue>(defaultTimeRange());
+  const [stats, setStats] = useState<ChargerStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
   // undefined = not loaded yet (render nothing, avoid a false-empty flash);
   // null = loaded, confirmed nothing upcoming (render the honest empty state).
   const [nextBooking, setNextBooking] = useState<NextHostBooking | null | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
 
-  const s = statsForRange(statsRange.start, statsRange.end);
+  // Real aggregation from the backend — refetched whenever the selected
+  // period changes (this callback is keyed on start/end), so switching
+  // periods never reuses the previous range's numbers. A refetch keeps the
+  // prior values visible until it resolves rather than flashing "—".
+  const loadStats = useCallback(async () => {
+    setStatsError(null);
+    setStatsLoading(true);
+    try {
+      setStats(await getChargerStats(statsRange.start, statsRange.end));
+    } catch (err) {
+      setStatsError(err instanceof ApiError ? err.message : "Couldn't load your stats — pull to refresh to try again.");
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [statsRange.start, statsRange.end]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  const hasActivity = !!stats && (stats.sessions > 0 || stats.kwh > 0 || stats.earned > 0);
   const statCards: [string, string][] = [
-    ["Sessions", String(s.sessions)],
-    ["kWh delivered", s.kwh.toFixed(1)],
-    ["Earned", `£${s.earned.toFixed(2)}`],
+    ["Sessions", stats ? String(stats.sessions) : "—"],
+    ["kWh delivered", stats ? stats.kwh.toFixed(1) : "—"],
+    ["Earned", stats ? `£${stats.earned.toFixed(2)}` : "—"],
   ];
 
   const loadNextBooking = useCallback(async () => {
@@ -165,7 +189,7 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? "")]);
+    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? ""), loadStats()]);
     setRefreshing(false);
   };
 
@@ -210,14 +234,33 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
             <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 10 }}>
               Across all chargers · {statsRange.label}
             </Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              {statCards.map(([k, v]) => (
-                <View key={k} style={{ flex: 1, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 13, alignItems: "center" }}>
-                  <Text style={{ fontFamily: fonts.mono, fontSize: 17, color: tokens.text, marginBottom: 4 }}>{v}</Text>
-                  <Text style={{ fontSize: 10, color: tokens.textSoft }}>{k}</Text>
-                </View>
-              ))}
-            </View>
+            {statsError ? (
+              <Pressable
+                onPress={loadStats}
+                style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 14, alignItems: "center" }}
+              >
+                <Text style={{ fontSize: 12.5, color: tokens.textSoft, textAlign: "center", lineHeight: 17 }}>{statsError}</Text>
+                <Text style={{ fontSize: 12, fontWeight: "500", color: tokens.cyan, marginTop: 6 }}>Tap to retry</Text>
+              </Pressable>
+            ) : !statsLoading && stats && !hasActivity ? (
+              <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 16, alignItems: "center" }}>
+                <Text style={{ fontSize: 13.5, fontWeight: "500", color: tokens.text, marginBottom: 3 }}>
+                  {statsRange.mode === "all" ? "No earnings yet" : `No earnings in ${statsRange.label}`}
+                </Text>
+                <Text style={{ fontSize: 11.5, color: tokens.textSoft, textAlign: "center", lineHeight: 16 }}>
+                  Completed sessions and payouts across your chargers show here once drivers have charged.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                {statCards.map(([k, v]) => (
+                  <View key={k} style={{ flex: 1, backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, padding: 13, alignItems: "center" }}>
+                    <Text style={{ fontFamily: fonts.mono, fontSize: 17, color: tokens.text, marginBottom: 4 }}>{v}</Text>
+                    <Text style={{ fontSize: 10, color: tokens.textSoft }}>{k}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={
