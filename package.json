@@ -6,7 +6,20 @@
     "packages/*",
     "infrastructure"
   ],
+  "comments": {
+    "overrides": [
+      "react 19.2.3: pins to one copy across the workspace — a clean reinstall otherwise resolves both 19.2.3 (this app's direct dep) and a hoisted 19.2.8 from looser peer ranges. See the SDK 54->57 upgrade commit.",
+      "expo* / react-native 0.86.2: the test device's Expo Go is stuck at 57.0.9 and cannot update. These pin the JS side down to exactly what the Expo Go 57.0.9 binary bundles natively (per expo@57.0.9's own bundledNativeModules.json + that release train's publish timestamps), so the JS/native ABI matches from the other direction. Revisit / raise these the moment a newer Expo Go can be installed."
+    ]
+  },
   "overrides": {
-    "react": "19.2.3"
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "expo": "57.0.9",
+    "expo-modules-core": "57.0.8",
+    "expo-asset": "57.0.8",
+    "expo-constants": "57.0.8",
+    "expo-file-system": "57.0.1",
+    "expo-font": "57.0.1"
   }
 }
