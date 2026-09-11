@@ -35,6 +35,7 @@ function AppShell() {
   const session = useSession();
   const chargerStore = useChargerStore();
   const [booted, setBooted] = useState(false);
+  const onSplashDone = useCallback(() => setBooted(true), []);
 
   // Registered once for the app's lifetime, not per-render/per-screen —
   // handles both a tap while the app's already running and a cold start
@@ -72,7 +73,13 @@ function AppShell() {
     <View style={{ flex: 1, backgroundColor: tokens.ink }}>
       <StatusBar style={mode === "dark" ? "light" : "dark"} />
       {!booted ? (
-        <SplashScreen onDone={() => setBooted(true)} />
+        // A stable callback, not the usual inline arrow — this component
+        // re-renders on every live session tick once a resumed session
+        // starts streaming (roughly once a second), and SplashScreen's own
+        // dismiss timer is now correctly decoupled from onDone's identity
+        // either way (see its doc comment), but there's no reason to keep
+        // handing it a fresh closure every one of those renders regardless.
+        <SplashScreen onDone={onSplashDone} />
       ) : status === "loading" ? (
         <View style={{ flex: 1, backgroundColor: tokens.ink }} />
       ) : status === "authenticated" && justAuthenticated ? (
