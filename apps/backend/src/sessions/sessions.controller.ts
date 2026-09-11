@@ -29,4 +29,12 @@ export class SessionsController {
   active(@CurrentUser() user: RequestUser) {
     return this.sessionsService.getActiveSession(user.userId);
   }
+
+  // Host-side discovery — see the doc comment on
+  // SessionsService.getActiveSessionsForHost for why this exists as its
+  // own endpoint rather than something derived client-side from "active".
+  @Get("active-for-host")
+  activeForHost(@CurrentUser() user: RequestUser) {
+    return this.sessionsService.getActiveSessionsForHost(user.userId);
+  }
 }

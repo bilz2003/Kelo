@@ -8,6 +8,7 @@ import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
 import { MeterState } from "./adapters/charger-adapter.interface";
 import { toCoreCharger } from "./charger-mapping";
 import { SessionEndedEvent } from "./session-ended.event";
+import { SessionStartedEvent } from "./session-started.event";
 
 type SessionWithBookingAndCharger = Prisma.SessionGetPayload<{ include: { booking: { include: { charger: true } } } }>;
 
@@ -60,6 +61,15 @@ export class SessionsService {
       await this.prisma.booking.update({ where: { id: booking.id }, data: { status: booking.status } });
       throw err;
     }
+
+    // Not broadcast over the session's WebSocket room — see
+    // session-started.event.ts for why. NotificationsService is the only
+    // consumer; it's what tells the charger's owner (who has no reason to
+    // already be subscribed to a session that didn't exist a moment ago)
+    // that there's now something to go discover via
+    // GET /sessions/active-for-host.
+    const startedPayload: SessionStartedEvent = { sessionId: session.id, bookingId: session.bookingId, chargerId: booking.chargerId };
+    this.events.emit("session.started", startedPayload);
 
     return { id: session.id, bookingId: session.bookingId, startedAt: session.startedAt };
   }
@@ -172,6 +182,53 @@ export class SessionsService {
     });
     if (!session) return null;
 
+    const snapshot = await this.snapshotSession(session);
+    return {
+      id: session.id,
+      bookingId: session.bookingId,
+      startedAt: session.startedAt,
+      arrivalAt: session.booking.arrivalAt,
+      endAt: session.booking.endAt,
+      ...snapshot,
+      charger: toCoreCharger(session.booking.charger),
+    };
+  }
+
+  /**
+   * The host-side counterpart to getActiveSession above — real discovery,
+   * not shared client-side state. A host has no reason to already know a
+   * session id the way a driver does (they didn't start it), so this is
+   * what lets a host's own device find out what's currently running
+   * across every charger they own, scoped by ownerId the same way
+   * BookingsService.findNextUpcomingForOwner already is. The client
+   * subscribes to each returned session's WebSocket room itself afterward
+   * (session:${sessionId}, already authorized for either the driver or the
+   * charger's owner — see SessionsGateway) — this endpoint only does
+   * discovery, not the live streaming, which is exactly the mechanism this
+   * exists to reuse rather than duplicate.
+   */
+  async getActiveSessionsForHost(ownerId: number) {
+    const sessions = await this.prisma.session.findMany({
+      where: { endedAt: null, booking: { charger: { ownerId } } },
+      include: { booking: { include: { charger: true } } },
+      orderBy: { startedAt: "asc" },
+    });
+    return Promise.all(
+      sessions.map(async (session) => {
+        const snapshot = await this.snapshotSession(session);
+        return { sessionId: session.id, chargerId: session.booking.chargerId, ...snapshot };
+      }),
+    );
+  }
+
+  /**
+   * Shared by getActiveSession (driver, single) and getActiveSessionsForHost
+   * (host, list) — the real live meter read plus any pending extension
+   * request, computed identically for both so a host's initial view of a
+   * session's numbers is never a different (or staler) shape than the
+   * driver's own.
+   */
+  private async snapshotSession(session: SessionWithBookingAndCharger) {
     const charger = session.booking.charger;
     // Was previously hardcoded to computeMockMeterState regardless of the
     // charger's own connectionRoute — meaning a real (non-mock) session's
@@ -188,16 +245,22 @@ export class SessionsService {
       live ?? { kwh: 0, seconds: Math.max(0, Math.floor((Date.now() - session.startedAt.getTime()) / 1000)) };
     const pendingExtension = await this.extensionRequests.findPendingForBooking(session.bookingId);
     return {
-      id: session.id,
-      bookingId: session.bookingId,
-      startedAt: session.startedAt,
-      arrivalAt: session.booking.arrivalAt,
-      endAt: session.booking.endAt,
       kwh,
       seconds,
-      charger: toCoreCharger(charger),
+      // bookingId/sessionId included even though this snapshot's own caller
+      // already knows both — matches the exact shape of a live
+      // extension:requested/approved/declined socket event
+      // (ExtensionRequestEvent) rather than a narrower one-off, so the
+      // client can treat an initial snapshot and a live event identically
+      // instead of synthesizing missing fields to make them fit one type.
       pendingExtension: pendingExtension
-        ? { id: pendingExtension.id, requestedEndAt: pendingExtension.requestedEndAt, status: "pending" as const }
+        ? {
+            id: pendingExtension.id,
+            bookingId: session.bookingId,
+            sessionId: session.id,
+            requestedEndAt: pendingExtension.requestedEndAt,
+            status: "pending" as const,
+          }
         : null,
     };
   }

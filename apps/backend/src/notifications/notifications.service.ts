@@ -4,6 +4,7 @@ import { Expo, ExpoPushMessage } from "expo-server-sdk";
 import { PrismaService } from "../prisma/prisma.service";
 import { ExtensionRequestEvent } from "../extension-requests/extension-request.event";
 import { SessionEndedEvent } from "../sessions/session-ended.event";
+import { SessionStartedEvent } from "../sessions/session-started.event";
 import { BookingCreatedEvent } from "../bookings/booking-created.event";
 import { BookingNoShowEvent } from "../no-show/booking-no-show.event";
 
@@ -92,6 +93,30 @@ export class NotificationsService {
       title: "Charging session ended",
       body: `£${payload.totalCost.toFixed(2)} total — tap to see your receipt.`,
       data: { type: "session_ended", bookingId: payload.bookingId },
+    });
+  }
+
+  // Real-time discovery for the host's My Chargers screen, chosen over
+  // polling GET /sessions/active-for-host on an interval — this reuses the
+  // exact push mechanism already in place for extension.requested/
+  // booking.created (both land on My Chargers too) rather than adding a
+  // second, always-on real-time mechanism next to the WebSocket one that
+  // already exists once a session's discovered. The one gap this leaves —
+  // a host with push permission denied who leaves My Chargers open across
+  // a session starting — is the same pre-existing gap every other trigger
+  // here already has; the focus-triggered fetch still covers a tab switch
+  // or app reopen either way.
+  @OnEvent("session.started")
+  async onSessionStarted(payload: SessionStartedEvent) {
+    const charger = await this.prisma.charger.findUnique({
+      where: { id: payload.chargerId },
+      select: { ownerId: true, title: true },
+    });
+    if (!charger) return;
+    await this.send(charger.ownerId, {
+      title: "Charging started",
+      body: `A session just started at ${charger.title}.`,
+      data: { type: "session_started", bookingId: payload.bookingId, chargerId: payload.chargerId },
     });
   }
 

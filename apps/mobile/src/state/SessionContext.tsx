@@ -167,14 +167,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       bookingIdRef.current = activeSession.bookingId;
       setBookingArrivalAt(new Date(activeSession.arrivalAt));
       setBookingEndAt(new Date(activeSession.endAt));
+      // Already the full ExtensionRequestEvent shape (bookingId/sessionId
+      // included) — the backend's snapshot helper returns this identically
+      // to a live extension:requested event, nothing to reconstruct here.
       if (activeSession.pendingExtension) {
-        setPendingExtension({
-          id: activeSession.pendingExtension.id,
-          bookingId: activeSession.bookingId,
-          sessionId: activeSession.id,
-          requestedEndAt: activeSession.pendingExtension.requestedEndAt,
-          status: "pending",
-        });
+        setPendingExtension(activeSession.pendingExtension);
       }
       connect(activeSession.id);
     } catch {

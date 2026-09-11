@@ -4,7 +4,7 @@ import { navigationRef } from "@/navigation/navigationRef";
 // Mirrors the `data` shape NotificationsService (backend) attaches to
 // each of the four (soon five) triggers — see notifications.service.ts.
 interface NotificationData {
-  type?: "extension_requested" | "extension_responded" | "booking_created" | "session_ended" | "no_show";
+  type?: "extension_requested" | "extension_responded" | "booking_created" | "session_started" | "session_ended" | "no_show";
   bookingId?: number;
 }
 
@@ -19,12 +19,16 @@ async function navigateForNotification(data: NotificationData) {
   if (!navigationRef.isReady()) return;
 
   switch (data.type) {
-    // Host-facing: both land on My Chargers, where the relevant session's
-    // card (pending extension banner, live session) renders itself from
-    // real-time state (SessionContext/the booking list), not from a
-    // param this deep link would need to carry.
+    // Host-facing: all land on My Chargers, where the relevant card
+    // (pending extension banner, live session, next-booking) renders
+    // itself from real-time state — the booking list, and, for
+    // session_started/extension_requested specifically,
+    // useHostActiveSessions' own server-discovered session state (not
+    // this device's driver-facing SessionContext) — not from a param this
+    // deep link would need to carry.
     case "extension_requested":
     case "booking_created":
+    case "session_started":
     case "no_show":
       navigationRef.navigate("Tabs", { screen: "MyChargers" });
       break;

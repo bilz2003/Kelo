@@ -8,7 +8,7 @@ import { Toggle, PulseDot } from "@/components/Controls";
 import { GhostButton, PrimaryButton } from "@/components/Button";
 import { TimeFilterButton } from "@/components/TimeFilterButton";
 import { useChargerStore } from "@/state/ChargerStoreContext";
-import { useSession } from "@/state/SessionContext";
+import { useHostActiveSessions } from "@/state/useHostActiveSessions";
 import { useAuth } from "@/state/AuthContext";
 import { ExtensionRequestEvent } from "@/api/sessions";
 import { getNextBookingForHost, NextHostBooking } from "@/api/bookings";
@@ -125,7 +125,13 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   const { tokens } = useTheme();
   const { myChargers, myChargersLoading, myChargersError, refetchMyChargers, toggleChargerAvailability, nameFor } = useChargerStore();
   const { user } = useAuth();
-  const session = useSession();
+  // Host-side live session visibility — a genuinely separate mechanism
+  // from the driver-facing SessionContext (see its own doc comment for
+  // why conflating the two is the wrong model, even though it's this
+  // screen's own charger's charging session, that session belongs to
+  // whichever driver actually started it, quite possibly on a completely
+  // different account/device).
+  const hostSessions = useHostActiveSessions();
   const [myCarOverride, setMyCarOverride] = useState(false);
   const [statsRange, setStatsRange] = useState<TimeRangeValue>(defaultTimeRange());
   const [stats, setStats] = useState<ChargerStats | null>(null);
@@ -180,16 +186,22 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   // elsewhere) plus pull-to-refresh below. user is always set here (this
   // screen only renders once authenticated) — the fallback is just to
   // satisfy the type without an unnecessary null check at the call site.
+  // hostSessions.refresh() covers the same "just came back to this
+  // screen" case for live sessions — a real session starting while this
+  // screen wasn't focused is otherwise invisible until this fires (the
+  // push-triggered refetch inside useHostActiveSessions covers the
+  // still-focused case this alone would miss).
   useFocusEffect(
     useCallback(() => {
       loadNextBooking();
       refetchMyChargers(user?.name ?? "");
-    }, [loadNextBooking, refetchMyChargers, user]),
+      hostSessions.refresh();
+    }, [loadNextBooking, refetchMyChargers, user, hostSessions.refresh]),
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? ""), loadStats()]);
+    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? ""), loadStats(), hostSessions.refresh()]);
     setRefreshing(false);
   };
 
@@ -271,19 +283,26 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <MyChargerCard
-            charger={item}
-            name={nameFor(item)}
-            onToggleAvailable={() => toggleChargerAvailability(item.id)}
-            onEdit={() => onEdit(item.id)}
-            isCharging={session.active && session.charger?.id === item.id}
-            liveKwh={session.kwh}
-            liveSeconds={session.seconds}
-            pendingExtension={session.charger?.id === item.id ? session.pendingExtension : null}
-            onRespondExtension={session.respondToExtension}
-          />
-        )}
+        renderItem={({ item }) => {
+          // From useHostActiveSessions — real server-discovered state for
+          // whoever's actually driving at this charger, not this device's
+          // own SessionContext. The card's own rendering logic is
+          // unchanged from before; only where this data comes from is.
+          const live = hostSessions.sessions.get(item.id);
+          return (
+            <MyChargerCard
+              charger={item}
+              name={nameFor(item)}
+              onToggleAvailable={() => toggleChargerAvailability(item.id)}
+              onEdit={() => onEdit(item.id)}
+              isCharging={!!live}
+              liveKwh={live?.kwh ?? 0}
+              liveSeconds={live?.seconds ?? 0}
+              pendingExtension={live?.pendingExtension ?? null}
+              onRespondExtension={(approve) => hostSessions.respondToExtension(item.id, approve)}
+            />
+          );
+        }}
         ListFooterComponent={
           <View>
             {nextBooking === null ? (

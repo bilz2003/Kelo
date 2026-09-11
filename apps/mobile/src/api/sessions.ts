@@ -58,7 +58,12 @@ export interface ActiveSessionResponse {
   kwh: number;
   seconds: number;
   charger: Charger;
-  pendingExtension: { id: number; requestedEndAt: string; status: "pending" } | null;
+  // Full ExtensionRequestEvent shape (id/bookingId/sessionId included, not
+  // just id/requestedEndAt/status) — the backend's snapshot helper returns
+  // this identically whether it's an initial fetch or reconstructing state,
+  // so it's always ready to use as-is, never a narrower one-off shape a
+  // live socket event doesn't also match.
+  pendingExtension: (ExtensionRequestEvent & { status: "pending" }) | null;
 }
 
 export function startSession(bookingId: number): Promise<StartSessionResponse> {
@@ -77,6 +82,25 @@ export function simulateUnplug(sessionId: number): Promise<SessionEndedEvent> {
 
 export function getActiveSession(): Promise<ActiveSessionResponse | null> {
   return apiFetch("/sessions/active");
+}
+
+/**
+ * The host-side counterpart to getActiveSession above — real server-side
+ * discovery across every charger the signed-in user owns (scoped by
+ * ownerId, same pattern as getNextBookingForHost), not anything derived
+ * from this device's own driver-side SessionContext. See
+ * useHostActiveSessions, the only caller.
+ */
+export interface HostActiveSession {
+  sessionId: number;
+  chargerId: number;
+  kwh: number;
+  seconds: number;
+  pendingExtension: (ExtensionRequestEvent & { status: "pending" }) | null;
+}
+
+export function getActiveSessionsForHost(): Promise<HostActiveSession[]> {
+  return apiFetch("/sessions/active-for-host");
 }
 
 /** Driver-only. Rejected server-side if the current endAt has already passed, or the requested time is out of bounds. */
