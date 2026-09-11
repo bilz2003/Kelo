@@ -60,12 +60,20 @@ export const FIXED = {
   splashBackground: DARK.ink,
 };
 
+// Space Grotesk (display) and IBM Plex Mono (mono) were retired from this
+// object for the 2026-09 font system change — everything reading through
+// `fonts` below now gets the new set. The two deliberate exceptions (the
+// BrandMark wordmark and the Splash screen's "verified, metered charging"
+// tagline) were moved to their own hardcoded fontFamily strings instead of
+// being carved out here, specifically so they can never be silently pulled
+// along by a future change to this object — see BrandMark in Controls.tsx
+// and SplashScreen.tsx for those.
 export const fonts = {
-  display: "SpaceGrotesk_700Bold", // headlines, prices, big numbers
-  body: "IBMPlexSans_400Regular",
-  bodyMedium: "IBMPlexSans_500Medium",
-  mono: "IBMPlexMono_400Regular", // reserved for measured figures — kWh, rates, timers
-  monoMedium: "IBMPlexMono_500Medium",
+  display: "BricolageGrotesque_700Bold", // headlines, prices, big numbers
+  body: "PublicSans_400Regular",
+  bodyMedium: "PublicSans_500Medium",
+  mono: "JetBrainsMono_400Regular", // reserved for measured figures — kWh, rates, timers
+  monoMedium: "JetBrainsMono_500Medium",
 };
 
 export const radii = { sm: 8, md: 10, lg: 12, xl: 14, xxl: 20, pill: 999 };

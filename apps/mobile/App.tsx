@@ -4,9 +4,16 @@ import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreenNative from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+// Space Grotesk and IBM Plex Mono (regular weight only) are loaded solely
+// for the two deliberate exceptions that keep their exact original
+// appearance — BrandMark's wordmark and the Splash screen's tagline — both
+// now hardcoded to these exact family names rather than reading through
+// theme/tokens.ts's fonts object. Everything else loads the new set below.
 import { useFonts as useSpaceGrotesk, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
-import { useFonts as useIBMPlexSans, IBMPlexSans_400Regular, IBMPlexSans_500Medium } from "@expo-google-fonts/ibm-plex-sans";
-import { useFonts as useIBMPlexMono, IBMPlexMono_400Regular, IBMPlexMono_500Medium } from "@expo-google-fonts/ibm-plex-mono";
+import { useFonts as useIBMPlexMono, IBMPlexMono_400Regular } from "@expo-google-fonts/ibm-plex-mono";
+import { useFonts as useBricolageGrotesque, BricolageGrotesque_700Bold } from "@expo-google-fonts/bricolage-grotesque";
+import { useFonts as usePublicSans, PublicSans_400Regular, PublicSans_500Medium } from "@expo-google-fonts/public-sans";
+import { useFonts as useJetBrainsMono, JetBrainsMono_400Regular, JetBrainsMono_500Medium } from "@expo-google-fonts/jetbrains-mono";
 
 import { ThemeProvider, useTheme } from "@/theme/ThemeContext";
 import { ChargerStoreProvider, useChargerStore } from "@/state/ChargerStoreContext";
@@ -81,10 +88,13 @@ function AppShell() {
 
 export default function App() {
   const [spaceGroteskLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold });
-  const [ibmPlexSansLoaded] = useIBMPlexSans({ IBMPlexSans_400Regular, IBMPlexSans_500Medium });
-  const [ibmPlexMonoLoaded] = useIBMPlexMono({ IBMPlexMono_400Regular, IBMPlexMono_500Medium });
+  const [ibmPlexMonoLoaded] = useIBMPlexMono({ IBMPlexMono_400Regular });
+  const [bricolageGrotesqueLoaded] = useBricolageGrotesque({ BricolageGrotesque_700Bold });
+  const [publicSansLoaded] = usePublicSans({ PublicSans_400Regular, PublicSans_500Medium });
+  const [jetBrainsMonoLoaded] = useJetBrainsMono({ JetBrainsMono_400Regular, JetBrainsMono_500Medium });
 
-  const fontsReady = spaceGroteskLoaded && ibmPlexSansLoaded && ibmPlexMonoLoaded;
+  const fontsReady =
+    spaceGroteskLoaded && ibmPlexMonoLoaded && bricolageGrotesqueLoaded && publicSansLoaded && jetBrainsMonoLoaded;
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsReady) await SplashScreenNative.hideAsync();

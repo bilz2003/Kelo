@@ -69,7 +69,12 @@ export function BrandMark({ size = 18, textSize = 15, gap = 8 }: { size?: number
         <Circle cx="46" cy="18" r="3" fill="#222A34" stroke="#2C3540" />
         <Circle cx="14" cy="42" r="3" fill="#222A34" stroke="#2C3540" />
       </Svg>
-      <Text style={{ fontFamily: fonts.display, fontSize: textSize, color: tokens.text, letterSpacing: -0.2 }}>
+      {/* Hardcoded, not fonts.display — the wordmark's typeface is part of
+          the brand mark itself and must stay Space Grotesk regardless of
+          what the shared `fonts` token points at. Don't "fix" this to use
+          fonts.display; that's exactly the coupling this was deliberately
+          pulled out of. See theme/tokens.ts's fonts object comment. */}
+      <Text style={{ fontFamily: "SpaceGrotesk_700Bold", fontSize: textSize, color: tokens.text, letterSpacing: -0.2 }}>
         kelo<Text style={{ color: tokens.cyan }}>.</Text>
       </Text>
     </View>
