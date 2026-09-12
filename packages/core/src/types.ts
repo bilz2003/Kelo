@@ -11,8 +11,8 @@ export interface Charger {
   cable: "Tethered cable" | "Bring your own cable";
   connector: string;
   rate: number; // £/kWh, public
-  overstayRate: number; // £/min, after the booking's agreed end time + 15 min grace
-  idleRate: number; // £/min, after charging finishes + 15 min grace, within the booked window
+  overstayRate: number; // £/min, after the booking's agreed end time + 15 min grace — derived server-side from rate/powerNum, not host-set (see deriveIdleAndOverstayRates)
+  idleRate: number; // £/min, from the instant charging finishes (no grace), within the booked window — derived server-side from rate/powerNum, not host-set
   noShowFee: number; // £ flat, late-cancellation/no-show
   hostCost?: number; // private — host's own £/kWh cost, for their profit tracking
   distance: string; // display string, e.g. "0.4 mi" — real app: computed from geocoded location

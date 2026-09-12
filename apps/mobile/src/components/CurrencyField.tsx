@@ -13,6 +13,17 @@ interface CurrencyFieldProps {
   helper?: string;
   placeholder?: string;
   optional?: boolean;
+  // For idleRate/overstayRate — fully server-derived now, never
+  // host-editable. Still rendered (not hidden) so a host can see what
+  // they'll actually be charged/paid, just non-interactive and visually
+  // dimmed.
+  readOnly?: boolean;
+  // Fires on every keystroke, not just on blur/commit like onChange does
+  // — lets a parent screen derive a live preview (e.g. idleRate/
+  // overstayRate from an in-progress rate edit) before that edit is
+  // actually committed. Unused by most fields; only meaningful for one
+  // something else derives its own live value from.
+  onDraftChange?: (raw: string) => void;
 }
 
 /**
@@ -23,12 +34,19 @@ interface CurrencyFieldProps {
  * typing, and only call onChange with a validated, clamped number (or
  * undefined, for optional fields) once the field loses focus.
  */
-export function CurrencyField({ label, value, onChange, min, max, unit = "kWh", helper, placeholder, optional = false }: CurrencyFieldProps) {
+export function CurrencyField({
+  label, value, onChange, min, max, unit = "kWh", helper, placeholder, optional = false, readOnly = false, onDraftChange,
+}: CurrencyFieldProps) {
   const { tokens } = useTheme();
   const toStr = (v: number | undefined) => (v === undefined ? "" : String(v));
   const [draft, setDraft] = useState(toStr(value));
 
   useEffect(() => setDraft(toStr(value)), [value]);
+
+  const handleChangeText = (text: string) => {
+    setDraft(text);
+    onDraftChange?.(text);
+  };
 
   const commit = () => {
     if (draft.trim() === "") {
@@ -60,19 +78,21 @@ export function CurrencyField({ label, value, onChange, min, max, unit = "kWh", 
           flexDirection: "row",
           alignItems: "center",
           gap: 8,
-          backgroundColor: tokens.surface2,
+          backgroundColor: readOnly ? tokens.surface : tokens.surface2,
           borderWidth: 1,
           borderColor: tokens.hair,
           borderRadius: radii.md,
           paddingHorizontal: 14,
           paddingVertical: 11,
+          opacity: readOnly ? 0.6 : 1,
         }}
       >
         <Text style={{ fontFamily: fonts.mono, color: tokens.textSoft, fontSize: 14 }}>£</Text>
         <TextInput
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={handleChangeText}
           onBlur={commit}
+          editable={!readOnly}
           keyboardType="decimal-pad"
           placeholder={placeholder}
           placeholderTextColor={tokens.textSoft}

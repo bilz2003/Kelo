@@ -7,6 +7,7 @@ import { SessionEndedEvent } from "../sessions/session-ended.event";
 import { SessionStartedEvent } from "../sessions/session-started.event";
 import { BookingCreatedEvent } from "../bookings/booking-created.event";
 import { BookingNoShowEvent } from "../no-show/booking-no-show.event";
+import { SessionTickEvent } from "../sessions/adapters/mock-charger-adapter";
 
 interface PushPayload {
   title: string;
@@ -26,6 +27,12 @@ interface PushPayload {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private readonly expo = new Expo();
+  // Tracks which sessions have already had their one idle-started push
+  // sent — session.tick fires every second or two for the whole session,
+  // but the driver should only ever be told once per session that idle
+  // billing has kicked in. Cleared on session.ended so this map can't
+  // grow without bound over the app's lifetime.
+  private readonly idleNotified = new Set<number>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -84,6 +91,7 @@ export class NotificationsService {
 
   @OnEvent("session.ended")
   async onSessionEnded(payload: SessionEndedEvent) {
+    this.idleNotified.delete(payload.sessionId);
     const booking = await this.prisma.booking.findUnique({
       where: { id: payload.bookingId },
       select: { driverId: true },
@@ -93,6 +101,34 @@ export class NotificationsService {
       title: "Charging session ended",
       body: `£${payload.totalCost.toFixed(2)} total — tap to see your receipt.`,
       data: { type: "session_ended", bookingId: payload.bookingId },
+    });
+  }
+
+  /**
+   * There's no more idle grace period for a driver to passively notice
+   * in-app before charges start — idle billing now begins the instant
+   * the meter goes flat, so this is what actually tells them it's
+   * happening. Rides the exact same session.tick event
+   * MockChargerAdapter/EnodeChargerAdapter/OcppCentralSystem already all
+   * emit identically (see SessionTickEvent) — no new per-adapter trigger,
+   * just a second listener on the one that already exists, watching for
+   * idleChargesActive's false->true transition rather than needing any
+   * adapter to know or care about notifications at all.
+   */
+  @OnEvent("session.tick")
+  async onSessionTick(payload: SessionTickEvent) {
+    if (!payload.idleChargesActive || this.idleNotified.has(payload.sessionId)) return;
+    this.idleNotified.add(payload.sessionId);
+
+    const session = await this.prisma.session.findUnique({
+      where: { id: payload.sessionId },
+      select: { bookingId: true, booking: { select: { driverId: true, charger: { select: { title: true } } } } },
+    });
+    if (!session) return;
+    await this.send(session.booking.driverId, {
+      title: "Idle charges have started",
+      body: `Your car's finished charging at ${session.booking.charger.title} — idle occupancy charges are now accruing.`,
+      data: { type: "idle_started", bookingId: session.bookingId },
     });
   }
 

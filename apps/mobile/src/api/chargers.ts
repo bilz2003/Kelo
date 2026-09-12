@@ -108,8 +108,10 @@ export interface ChargerWriteFields {
   cable: "TETHERED" | "BRING_YOUR_OWN";
   connector: string;
   rate: number;
-  overstayRate: number;
-  idleRate: number;
+  // overstayRate/idleRate deliberately not writable fields here — the
+  // backend derives and stores both itself from rate/powerKw (see
+  // ChargersService.create/update + @kelo/core's
+  // deriveIdleAndOverstayRates) and rejects either if sent.
   noShowFee: number;
   hostCost?: number;
   connectionRoute: "OCPP" | "ENODE";

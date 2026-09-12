@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { BookingStatus, ConnectionRoute, Prisma } from "@prisma/client";
+import { deriveIdleAndOverstayRates } from "@kelo/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { GeocodingService } from "../geocoding/geocoding.service";
 import { haversineMiles } from "../geocoding/haversine";
@@ -116,8 +117,15 @@ export class ChargersService {
 
     const { lat, lng } = await this.geocoding.geocode(dto.postcode);
     const { photos, ...rest } = dto;
+    // The server is the sole source of truth for idleRate/overstayRate —
+    // computed here from this same request's rate/powerKw, never taken
+    // from the client (the DTO doesn't even have those fields; see its
+    // own comment). Same formula the mobile app's live preview uses, via
+    // the shared @kelo/core function, so what a host sees while typing is
+    // exactly what actually gets stored.
+    const { idleRate, overstayRate } = deriveIdleAndOverstayRates(dto.rate, dto.powerKw);
     const charger = await this.prisma.charger.create({
-      data: { ...rest, ownerId, lat, lng, photoKeys: photos ?? [] },
+      data: { ...rest, idleRate, overstayRate, ownerId, lat, lng, photoKeys: photos ?? [] },
     });
     return this.photos.resolveCharger(charger, { includeKeys: true });
   }
@@ -144,15 +152,24 @@ export class ChargersService {
   }
 
   async update(ownerId: number, id: number, dto: UpdateChargerDto) {
-    await this.findChargerOrThrow(ownerId, id);
+    const existing = await this.findChargerOrThrow(ownerId, id);
     // Only re-geocode when the postcode actually changed — no reason to
     // hit postcodes.io on every unrelated field edit (e.g. flipping
     // `available`).
     const coords = dto.postcode !== undefined ? await this.geocoding.geocode(dto.postcode) : {};
     const { photos, ...rest } = dto;
+    // Recomputed on every update, not just when `rate` is in this
+    // particular PATCH — using whichever of rate/powerKw this request
+    // actually changes, falling back to the charger's current value for
+    // whichever it doesn't. Keeps idleRate/overstayRate always correct
+    // for the charger's current rate/power, rather than only on the one
+    // field this request happened to touch.
+    const effectiveRate = dto.rate ?? existing.rate;
+    const effectivePowerKw = dto.powerKw ?? existing.powerKw;
+    const { idleRate, overstayRate } = deriveIdleAndOverstayRates(effectiveRate, effectivePowerKw);
     const charger = await this.prisma.charger.update({
       where: { id },
-      data: { ...rest, ...coords, ...(photos !== undefined ? { photoKeys: photos } : {}) },
+      data: { ...rest, idleRate, overstayRate, ...coords, ...(photos !== undefined ? { photoKeys: photos } : {}) },
     });
     return this.photos.resolveCharger(charger, { includeKeys: true });
   }

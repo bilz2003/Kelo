@@ -123,7 +123,7 @@ export function ChargerDetailScreen({ route, navigation }: Props) {
 
   const pricingRows: [string, string][] = [
     ["Charging rate", `£${charger.rate.toFixed(2)} / kWh`],
-    ["Idle occupancy, after 15 min once full", `£${charger.idleRate.toFixed(2)} / min`],
+    ["Idle occupancy, once full", `£${charger.idleRate.toFixed(2)} / min`],
     ["Overstay, after 15 min grace", `£${charger.overstayRate.toFixed(2)} / min`],
     ["Free cancellation", "up to 2 hrs before"],
   ];

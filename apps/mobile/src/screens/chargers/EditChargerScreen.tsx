@@ -13,6 +13,7 @@ import { defaultListingName } from "@/data/mockChargers";
 import { toApiCable, ChargerWriteFields } from "@/api/chargers";
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
+import { deriveIdleAndOverstayRates } from "@kelo/core";
 
 export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; onBack: () => void }) {
   const { tokens } = useTheme();
@@ -27,6 +28,11 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
   // noise for one field; CurrencyField already does its own version of
   // this internally for the numeric fields below.
   const [draftName, setDraftName] = useState(() => (charger ? nameFor(charger) : ""));
+  // Live, per-keystroke draft of the rate field, same pattern (and same
+  // reason) as AddChargerScreen's — lets the read-only idle/overstay
+  // preview below update instantly as the host types, before the edit is
+  // actually committed on blur.
+  const [rateDraft, setRateDraft] = useState(() => (charger ? String(charger.rate) : ""));
 
   // Defensive: navigates back automatically if the charger disappears out
   // from under this screen — including the real case now, right after a
@@ -41,6 +47,16 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
   if (!charger) return null;
 
   const isDuplicate = draftName.trim() !== "" && siblingNames(charger.id).some((n) => namesMatch(n, draftName));
+
+  // Live preview only — charger.idleRate/overstayRate (used everywhere
+  // else on this screen and app-wide) are the real, already-persisted
+  // values; this just reflects what they'll become the instant the rate
+  // edit below actually commits, using the exact same shared formula.
+  const previewRateValue = (() => {
+    const n = parseFloat(rateDraft);
+    return Number.isFinite(n) && n > 0 ? n : charger.rate;
+  })();
+  const { idleRate: previewIdleRate, overstayRate: previewOverstayRate } = deriveIdleAndOverstayRates(previewRateValue, charger.powerNum);
 
   const onChargerChange = async (patch: Partial<ChargerWriteFields>) => {
     setFieldError(null);
@@ -131,29 +147,32 @@ export function EditChargerScreen({ chargerId, onBack }: { chargerId: number; on
           unit="kWh"
           value={charger.rate}
           onChange={(v) => v !== undefined && onChargerChange({ rate: v })}
+          onDraftChange={setRateDraft}
           min={0.1}
           max={1.0}
           helper="What drivers compare between hosts. Kelo takes a 12% commission on this."
         />
 
         <CurrencyField
-          label="Idle occupancy rate — after charging finishes"
+          label="Idle occupancy rate — from the moment charging finishes"
           unit="min"
-          value={charger.idleRate}
-          onChange={(v) => v !== undefined && onChargerChange({ idleRate: v })}
-          min={0.05}
-          max={1.0}
-          helper="Starts 15 minutes after the car stops drawing power, for as long as it sits in the booked window without being released. Range £0.05–£1.00. Kelo takes a 12% commission."
+          value={previewIdleRate}
+          onChange={() => {}}
+          readOnly
+          min={0}
+          max={Infinity}
+          helper="Automatically set at 1.5× your charging rate. Kelo takes a 12% commission."
         />
 
         <CurrencyField
           label="Overstay rate — after 15 min grace"
           unit="min"
-          value={charger.overstayRate}
-          onChange={(v) => v !== undefined && onChargerChange({ overstayRate: v })}
-          min={0.25}
-          max={5.0}
-          helper="Charged automatically if a driver stays past their booked window. Range £0.25–£5.00. Kelo takes a 30% commission."
+          value={previewOverstayRate}
+          onChange={() => {}}
+          readOnly
+          min={0}
+          max={Infinity}
+          helper="Automatically set at 7× your charging rate. Kelo takes a 30% commission."
         />
 
         <CurrencyField

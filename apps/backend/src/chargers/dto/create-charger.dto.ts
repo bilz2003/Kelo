@@ -30,13 +30,12 @@ export class CreateChargerDto {
   @Min(0)
   rate!: number;
 
-  @IsNumber()
-  @Min(0)
-  overstayRate!: number;
-
-  @IsNumber()
-  @Min(0)
-  idleRate!: number;
+  // idleRate/overstayRate are deliberately NOT fields on this DTO — they're
+  // fully derived server-side from rate/powerKw (see
+  // ChargersService.create/update and @kelo/core's
+  // deriveIdleAndOverstayRates), not something a host sets directly.
+  // ValidationPipe's forbidNonWhitelisted (main.ts) means a client that
+  // still sends either gets a real 400, not a silently-ignored value.
 
   @IsNumber()
   @Min(0)

@@ -2,9 +2,16 @@ import * as Notifications from "expo-notifications";
 import { navigationRef } from "@/navigation/navigationRef";
 
 // Mirrors the `data` shape NotificationsService (backend) attaches to
-// each of the four (soon five) triggers — see notifications.service.ts.
+// each trigger — see notifications.service.ts.
 interface NotificationData {
-  type?: "extension_requested" | "extension_responded" | "booking_created" | "session_started" | "session_ended" | "no_show";
+  type?:
+    | "extension_requested"
+    | "extension_responded"
+    | "booking_created"
+    | "session_started"
+    | "session_ended"
+    | "idle_started"
+    | "no_show";
   bookingId?: number;
 }
 
@@ -34,9 +41,13 @@ async function navigateForNotification(data: NotificationData) {
       break;
     // Driver-facing: ActiveSessionScreen reads session.charger/
     // session.lastReceipt from SessionContext, not from route params —
-    // so there's nothing charger-specific to pass here either.
+    // so there's nothing charger-specific to pass here either. Same
+    // reasoning covers idle_started — the screen already renders the
+    // idle-active state itself from computeSessionFinancials the moment
+    // it's mounted, nothing to pass in from the notification.
     case "extension_responded":
     case "session_ended":
+    case "idle_started":
       navigationRef.navigate("ActiveSession", {});
       break;
     default:

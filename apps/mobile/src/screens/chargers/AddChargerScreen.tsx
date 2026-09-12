@@ -15,7 +15,7 @@ import { createCharger, startEnodeLink, resolveEnodeLink } from "@/api/chargers"
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
 import { CHARGER_MODELS, ROUTE_NOTES } from "@/data/mockChargers";
-import { ChargerModelOption } from "@kelo/core";
+import { ChargerModelOption, deriveIdleAndOverstayRates } from "@kelo/core";
 
 // Enode's own real Link redirect — must match EnodeLinkService's fixed
 // REDIRECT_URI on the backend exactly (see that file's own comment on
@@ -47,8 +47,13 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
   const [name, setName] = useState("");
   const [photos, setPhotos] = useState<PhotoDraft[]>([]);
   const [rate, setRate] = useState(0.3);
-  const [idleRate, setIdleRate] = useState(0.15);
-  const [overstayRate, setOverstayRate] = useState(1.0);
+  // Live, per-keystroke draft of the rate field — separate from `rate`
+  // itself (which only updates on blur/commit, like every other
+  // CurrencyField) so the derived idle/overstay preview below updates
+  // instantly as the host types, not just after they tab away. Falls
+  // back to the committed `rate` whenever the draft doesn't parse to a
+  // real positive number (empty, mid-edit like "0.", etc).
+  const [rateDraft, setRateDraft] = useState(String(0.3));
   const [noShowFee, setNoShowFee] = useState(3.0);
   const [hostCost, setHostCost] = useState<number | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
@@ -123,6 +128,16 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
   const existingNames = siblingNames(null);
   const isDuplicate = name.trim() !== "" && existingNames.some((n) => namesMatch(n, name));
 
+  // Live preview only — the real values are computed and stored
+  // server-side (ChargersService.create), from this exact same shared
+  // formula, the moment this submits. Falls back to the last committed
+  // `rate` while the draft is empty/unparseable (e.g. mid-edit).
+  const previewRateValue = (() => {
+    const n = parseFloat(rateDraft);
+    return Number.isFinite(n) && n > 0 ? n : rate;
+  })();
+  const { idleRate, overstayRate } = deriveIdleAndOverstayRates(previewRateValue, model?.powerNum ?? 0);
+
   const submit = async () => {
     if (!model || !canSubmit || submitting) return;
     setSubmitError(null);
@@ -136,8 +151,9 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         connector: "Type 2",
         listingName: name.trim() || undefined,
         rate,
-        idleRate,
-        overstayRate,
+        // idleRate/overstayRate deliberately not sent — the server now
+        // derives and writes both itself (see ChargersService.create);
+        // sending them would just be rejected (see CreateChargerDto).
         noShowFee,
         hostCost,
         connectionRoute: "ENODE",
@@ -279,29 +295,32 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
           unit="kWh"
           value={rate}
           onChange={(v) => v !== undefined && setRate(v)}
+          onDraftChange={setRateDraft}
           min={0.1}
           max={1.0}
           helper="What drivers compare between hosts. Kelo takes a 12% commission on this."
         />
 
         <CurrencyField
-          label="Idle occupancy rate — after charging finishes"
+          label="Idle occupancy rate — from the moment charging finishes"
           unit="min"
           value={idleRate}
-          onChange={(v) => v !== undefined && setIdleRate(v)}
-          min={0.05}
-          max={1.0}
-          helper="Starts 15 minutes after the car stops drawing power, for as long as it sits in the booked window without being released. Range £0.05–£1.00. Kelo takes a 12% commission."
+          onChange={() => {}}
+          readOnly
+          min={0}
+          max={Infinity}
+          helper="Automatically set at 1.5× your charging rate. Kelo takes a 12% commission."
         />
 
         <CurrencyField
           label="Overstay rate — after 15 min grace"
           unit="min"
           value={overstayRate}
-          onChange={(v) => v !== undefined && setOverstayRate(v)}
-          min={0.25}
-          max={5.0}
-          helper="Charged automatically if a driver stays past their booked window. Range £0.25–£5.00. Kelo takes a 30% commission."
+          onChange={() => {}}
+          readOnly
+          min={0}
+          max={Infinity}
+          helper="Automatically set at 7× your charging rate. Kelo takes a 30% commission."
         />
 
         <CurrencyField

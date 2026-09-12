@@ -9,20 +9,19 @@ import { PulseDot } from "@/components/Controls";
 import { TimeSlotPicker } from "@/components/TimePickers";
 import { useSession } from "@/state/SessionContext";
 import { RootStackParamList } from "@/navigation/types";
-import { computeSessionFinancials, SESSION_FULL_AT_SECONDS, MAX_BOOKING_HOURS, formatTimeWithDay } from "@kelo/core";
+import { computeSessionFinancials, MAX_BOOKING_HOURS, formatTimeWithDay } from "@kelo/core";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActiveSession">;
 
 export function ActiveSessionScreen({ navigation }: Props) {
   const { tokens } = useTheme();
   const session = useSession();
-  // Two separate flags, not one — a real bug this audit found: sharing a
-  // single `dismissedFullPrompt` between the "car looks fully charged"
-  // notice and the later "idle occupancy charges have started" warning
-  // meant dismissing the first (informational, no cost yet) silently
-  // suppressed the second (money now being charged) for the rest of the
-  // session, since both used to render from the same gated block.
-  const [dismissedFullPrompt, setDismissedFullPrompt] = useState(false);
+  // Only one prompt now — idle billing starts the instant the car is
+  // full (no more grace period to have a separate "informational, no
+  // cost yet" phase for beforehand). This used to be two separate flags
+  // gating two different messages (a real bug once meant dismissing the
+  // first silently suppressed the second); with the grace period gone
+  // there's only ever the one state to show or dismiss.
   const [dismissedIdlePrompt, setDismissedIdlePrompt] = useState(false);
   const [unplugging, setUnplugging] = useState(false);
   const [unplugError, setUnplugError] = useState<string | null>(null);
@@ -44,11 +43,10 @@ export function ActiveSessionScreen({ navigation }: Props) {
   const { kwh, seconds } = session;
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
-  const isFull = seconds >= SESSION_FULL_AT_SECONDS;
   const { idleChargesActive, idleCost, energyCost, totalCost } = charger
     ? computeSessionFinancials(charger, kwh, seconds)
     : { idleChargesActive: false, idleCost: 0, energyCost: 0, totalCost: 0 };
-  const showFullPrompt = isFull && (idleChargesActive ? !dismissedIdlePrompt : !dismissedFullPrompt);
+  const showIdlePrompt = idleChargesActive && !dismissedIdlePrompt;
 
   // Mock-only trigger, standing in for a real hardware unplug signal — this
   // is the ONLY thing that can end a session, and it's fire-and-forget:
@@ -196,34 +194,29 @@ export function ActiveSessionScreen({ navigation }: Props) {
           <Text style={{ fontSize: 11.5, color: tokens.textSoft }}>No tap, no power — this session was authorized by Kelo</Text>
         </View>
 
-        {showFullPrompt && (
+        {showIdlePrompt && (
           <View
             style={{
-              backgroundColor: idleChargesActive ? "rgba(232,132,107,0.1)" : tokens.cyanTint10,
+              backgroundColor: "rgba(232,132,107,0.1)",
               borderWidth: 1,
-              borderColor: idleChargesActive ? "rgba(232,132,107,0.35)" : tokens.cyanTint30,
+              borderColor: "rgba(232,132,107,0.35)",
               borderRadius: radii.lg,
               padding: 14,
               marginBottom: 14,
             }}
           >
             <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-              {idleChargesActive ? <Clock size={15} color={tokens.danger} style={{ marginTop: 1 }} /> : <Check size={15} color={tokens.cyan} style={{ marginTop: 1 }} />}
+              <Clock size={15} color={tokens.danger} style={{ marginTop: 1 }} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 13, fontWeight: "600", color: tokens.text, marginBottom: 4 }}>
-                  {idleChargesActive ? "Idle occupancy charges have started" : "Car looks fully charged"}
+                  Idle occupancy charges have started
                 </Text>
                 <Text style={{ fontSize: 12, color: tokens.textSoft, lineHeight: 17 }}>
-                  {idleChargesActive
-                    ? `You're being charged £${charger?.idleRate.toFixed(2)}/min because the car's been sitting idle in this booked space for over 15 minutes. This continues until the charger reports you've unplugged.`
-                    : "You're still within your booked window, with 15 minutes before any idle charge applies. Charging keeps running until the charger reports you've unplugged."}
+                  {`You're being charged £${charger?.idleRate.toFixed(2)}/min because the car's finished charging and is still sitting in this booked space. This continues until the charger reports you've unplugged.`}
                 </Text>
               </View>
             </View>
-            <GhostButton
-              onPress={() => (idleChargesActive ? setDismissedIdlePrompt(true) : setDismissedFullPrompt(true))}
-              style={{ paddingVertical: 11 }}
-            >
+            <GhostButton onPress={() => setDismissedIdlePrompt(true)} style={{ paddingVertical: 11 }}>
               Got it
             </GhostButton>
           </View>

@@ -539,7 +539,7 @@ export function DiscoverListScreen({ navigation }: Props) {
                     <View style={{ backgroundColor: tokens.surface, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.lg, paddingHorizontal: 14 }}>
                       {([
                         ["Charging rate", `£${mapPinSelected.rate.toFixed(2)} / kWh`],
-                        ["Idle occupancy, after 15 min once full", `£${mapPinSelected.idleRate.toFixed(2)} / min`],
+                        ["Idle occupancy, once full", `£${mapPinSelected.idleRate.toFixed(2)} / min`],
                         ["Overstay, after 15 min grace", `£${mapPinSelected.overstayRate.toFixed(2)} / min`],
                         ["Free cancellation", "up to 2 hrs before"],
                       ] as [string, string][]).map(([k, v], i, arr) => (
