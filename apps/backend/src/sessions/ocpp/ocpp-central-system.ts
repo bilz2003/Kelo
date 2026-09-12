@@ -20,6 +20,29 @@ import { SessionTickEvent } from "../adapters/mock-charger-adapter";
 const START_TIMEOUT_MS = 30_000; // bounded wait for the charge point's own real StartTransaction after RemoteStartTransaction
 const STOP_TIMEOUT_MS = 30_000; // bounded wait for the charge point's own real StopTransaction after RemoteStopTransaction
 
+// Real charge points send OCPP Heartbeat at the interval this central
+// system itself specifies in BootNotification's response (below) — 300s.
+// A charge point that's gone silent — genuinely disconnected and never
+// reconnecting, or still technically connected at the WebSocket/TCP
+// level but not actually sending anything (a hung charge point, not a
+// network failure) — was previously invisible: nothing tracked "when did
+// we last hear from it" at all. Checked before writing this, per
+// OCPP-INTEGRATION.md's own "What's still open" note that the
+// reconnection story was implemented as designed but never exercised as
+// its own scenario — confirmed live (a real simulator, hard-killed
+// mid-session) that a dropped connection's Session/Booking really did
+// stay "active" indefinitely with no reconciliation.
+//
+// STALE_TIMEOUT_MS deliberately allows a few missed heartbeats, not just
+// one late one, before treating a charge point as actually gone — the
+// same real-world CSMS heuristic this being a multiple of the heartbeat
+// interval reflects. Configurable via OCPP_STALE_TIMEOUT_MS so this can
+// be tested against a short window without needing to change the
+// production default.
+const HEARTBEAT_INTERVAL_SECONDS = 300;
+const DEFAULT_STALE_TIMEOUT_MS = 3 * HEARTBEAT_INTERVAL_SECONDS * 1000; // 15 minutes
+const STALE_SWEEP_INTERVAL_MS = 10_000; // cheap (a Map scan) — bounds detection latency once the real timeout above is actually crossed
+
 type OcppParams = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- OCPP message bodies; shape enforced at runtime by ocpp-rpc's strictMode + official OCA schemas, not worth re-declaring here
 
 /**
@@ -80,12 +103,17 @@ export class OcppCentralSystem implements OnModuleInit, OnModuleDestroy {
   private readonly pendingStops = new Map<number, PendingStop>(); // sessionId -> awaiting a backend-requested StopTransaction
   private readonly transactions = new Map<number, ActiveTransaction>(); // sessionId -> live meter state
   private readonly sessionByChargePoint = new Map<string, number>(); // chargePointId -> its active sessionId
+  private readonly lastSeenAt = new Map<string, number>(); // chargePointId -> Date.now() of its last real message (any type)
+  private readonly staleWarned = new Set<string>(); // chargePointId already flagged this staleness episode — avoids re-logging/re-finalizing every sweep tick
+  private staleSweepTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly staleTimeoutMs: number;
 
   constructor(
     private readonly config: ConfigService,
     private readonly events: EventEmitter2,
     private readonly prisma: PrismaService,
   ) {
+    this.staleTimeoutMs = this.config.get<number>("OCPP_STALE_TIMEOUT_MS", DEFAULT_STALE_TIMEOUT_MS);
     this.server = new RPCServer({ protocols: ["ocpp1.6"], strictMode: true });
     this.server.auth((accept) => {
       // Transport-level accept only — Charger.ocppChargePointId is what
@@ -101,10 +129,60 @@ export class OcppCentralSystem implements OnModuleInit, OnModuleDestroy {
     const port = this.config.get<number>("OCPP_PORT", 9220);
     await this.server.listen(port);
     this.logger.log(`OCPP 1.6-J central system listening on ws://localhost:${port}`);
+    this.staleSweepTimer = setInterval(() => this.sweepStaleConnections(), STALE_SWEEP_INTERVAL_MS);
   }
 
   async onModuleDestroy(): Promise<void> {
+    if (this.staleSweepTimer) clearInterval(this.staleSweepTimer);
     await this.server.close({});
+  }
+
+  /**
+   * A charge point is "stale" once nothing real has been heard from it
+   * (connected or not — a disconnected-and-never-reconnected charge point
+   * and a still-connected-but-silent one are indistinguishable from here,
+   * deliberately: both mean the same thing for reconciliation purposes)
+   * for longer than staleTimeoutMs. With no active session, that's just a
+   * warning — an idle charge point going quiet has no billing
+   * consequence. With one, leaving it "active" forever would mean a
+   * booking/session that never resolves and a driver whose elapsed time
+   * (and, once overstay/idle rules kick in, cost) keeps climbing against
+   * a meter reading frozen at whatever it last reported — so this
+   * finalizes it, through the exact same ocpp.stop.unsolicited path a
+   * real unsolicited StopTransaction already drives, using the last
+   * known meter reading rather than fabricating one. SessionsService's
+   * own endedAt guard makes this safe even if a delayed real
+   * StopTransaction still arrives afterward from a charge point that
+   * reconnects late.
+   */
+  private sweepStaleConnections(): void {
+    const now = Date.now();
+    for (const [chargePointId, lastSeen] of this.lastSeenAt) {
+      if (now - lastSeen < this.staleTimeoutMs || this.staleWarned.has(chargePointId)) continue;
+      this.staleWarned.add(chargePointId);
+
+      const sessionId = this.sessionByChargePoint.get(chargePointId);
+      if (sessionId === undefined) {
+        this.logger.warn(`Charge point ${chargePointId} has gone silent for over ${this.staleTimeoutMs}ms — no active session, nothing to reconcile.`);
+        continue;
+      }
+
+      const tx = this.transactions.get(sessionId);
+      const meterState: MeterState = tx
+        ? { kwh: +(tx.lastMeterKwh - tx.meterStartKwh).toFixed(3), seconds: Math.max(0, Math.floor((now - tx.startedAt.getTime()) / 1000)) }
+        : { kwh: 0, seconds: 0 };
+      this.logger.warn(
+        `Charge point ${chargePointId} has gone silent for over ${this.staleTimeoutMs}ms with session ${sessionId} still active — finalizing from its last known reading (kwh=${meterState.kwh}) rather than leaving it in permanent limbo.`,
+      );
+      this.transactions.delete(sessionId);
+      this.sessionByChargePoint.delete(chargePointId);
+      this.events.emit("ocpp.stop.unsolicited", { sessionId, meterState });
+    }
+  }
+
+  private touch(chargePointId: string): void {
+    this.lastSeenAt.set(chargePointId, Date.now());
+    this.staleWarned.delete(chargePointId); // a real message means whatever staleness episode was flagged is over
   }
 
   isConnected(chargePointId: string): boolean {
@@ -209,20 +287,27 @@ export class OcppCentralSystem implements OnModuleInit, OnModuleDestroy {
     const chargePointId = client.identity;
     this.logger.log(`Charge point connected: ${chargePointId}`);
     this.clients.set(chargePointId, client);
+    this.touch(chargePointId);
 
     client.handle("BootNotification", async ({ params }) => {
+      this.touch(chargePointId);
       this.logger.log(`BootNotification from ${chargePointId}: ${params.chargePointVendor} ${params.chargePointModel}`);
-      return { status: "Accepted", currentTime: new Date().toISOString(), interval: 300 };
+      return { status: "Accepted", currentTime: new Date().toISOString(), interval: HEARTBEAT_INTERVAL_SECONDS };
     });
 
-    client.handle("Heartbeat", async () => ({ currentTime: new Date().toISOString() }));
+    client.handle("Heartbeat", async () => {
+      this.touch(chargePointId);
+      return { currentTime: new Date().toISOString() };
+    });
 
     client.handle("StatusNotification", async ({ params }) => {
+      this.touch(chargePointId);
       this.logger.log(`StatusNotification from ${chargePointId}: connector ${params.connectorId} -> ${params.status}`);
       return {};
     });
 
     client.handle("Authorize", async () => {
+      this.touch(chargePointId);
       // Kelo's authorization decision already happened in-app before
       // RemoteStartTransaction was ever sent — any idTag reaching us here
       // is one we minted ourselves (see OcppChargerAdapter), so it's
@@ -231,11 +316,23 @@ export class OcppCentralSystem implements OnModuleInit, OnModuleDestroy {
       return { idTagInfo: { status: "Accepted" } };
     });
 
-    client.handle("StartTransaction", async ({ params }) => this.onStartTransaction(chargePointId, params));
-    client.handle("StopTransaction", async ({ params }) => this.onStopTransaction(chargePointId, params));
-    client.handle("MeterValues", async ({ params }) => this.onMeterValues(chargePointId, params));
+    client.handle("StartTransaction", async ({ params }) => {
+      this.touch(chargePointId);
+      return this.onStartTransaction(chargePointId, params);
+    });
+    client.handle("StopTransaction", async ({ params }) => {
+      this.touch(chargePointId);
+      return this.onStopTransaction(chargePointId, params);
+    });
+    client.handle("MeterValues", async ({ params }) => {
+      this.touch(chargePointId);
+      return this.onMeterValues(chargePointId, params);
+    });
 
     client.handle(async ({ method }) => {
+      // Still a real, live message — proves the charge point isn't stale,
+      // even though we don't understand this particular one.
+      this.touch(chargePointId);
       this.logger.warn(`Unhandled OCPP method from ${chargePointId}: ${method}`);
       throw createRPCError("NotImplemented");
     });

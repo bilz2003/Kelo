@@ -16,6 +16,17 @@
  *   unplug   - sends a real, unsolicited StopTransaction (simulates a
  *              driver physically unplugging, with no RemoteStopTransaction
  *              behind it)
+ *   localstart - sends a real, unprompted StartTransaction with no
+ *              preceding RemoteStartTransaction — simulates a host using
+ *              their own charger normally, entirely outside any Kelo
+ *              booking (per the product's own authorization model, this
+ *              is allowed and should be ignored by the central system,
+ *              not treated as a real Kelo session)
+ *   freeze   - stops the periodic MeterValues timer (if a transaction is
+ *              active) without closing the connection, simulating a
+ *              charge point whose application logic has hung but whose
+ *              WebSocket/TCP link is still up — distinct from a real
+ *              disconnect
  *   status   - prints current internal state to stdout as JSON, prefixed
  *              "SIM_STATUS:" (used by verify-ocpp.js to poll state)
  *   quit     - closes the connection and exits
@@ -178,6 +189,17 @@ async function main() {
     if (cmd === "unplug") {
       log("Received local unplug command — sending unsolicited StopTransaction.");
       endTransaction().catch((err) => log("unplug failed:", err.message));
+    } else if (cmd === "localstart") {
+      log("Received local start command — sending unprompted StartTransaction (no RemoteStartTransaction behind it).");
+      beginTransaction("LOCAL-NO-KELO-BOOKING").catch((err) => log("StartTransaction rejected (expected if no pending remote start):", err.message));
+    } else if (cmd === "freeze") {
+      if (state.meterTimer) {
+        clearInterval(state.meterTimer);
+        state.meterTimer = null;
+        log("MeterValues timer frozen — connection stays open, no more messages sent for this transaction.");
+      } else {
+        log("Nothing to freeze — no active transaction.");
+      }
     } else if (cmd === "status") {
       console.log(
         "SIM_STATUS:" +
