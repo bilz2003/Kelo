@@ -10,6 +10,7 @@ import { EnodeClientModule } from "./adapters/enode-client.module";
 import { EnodeWebhookController } from "./adapters/enode-webhook.controller";
 import { OcppChargerAdapter } from "./adapters/ocpp-charger-adapter";
 import { OcppCentralSystem } from "./ocpp/ocpp-central-system";
+import { OcppOnboardingService } from "./ocpp/ocpp-onboarding.service";
 import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
 
 @Module({
@@ -25,10 +26,15 @@ import { ChargerAdapterRegistry } from "./adapters/charger-adapter-registry";
     // (see OCPP-INTEGRATION.md) — a real long-lived listener, not just a
     // request-scoped helper.
     OcppCentralSystem,
+    OcppOnboardingService,
     // SessionsService depends on the registry, not on any adapter
     // directly — it looks one up per charger, by that charger's own
     // connectionRoute.
     ChargerAdapterRegistry,
   ],
+  // Only OcppOnboardingService is exported — ChargersModule needs it for
+  // the host-onboarding flow (mirroring EnodeLinkService's own role next
+  // door), but OcppCentralSystem itself stays encapsulated in here.
+  exports: [OcppOnboardingService],
 })
 export class SessionsModule {}

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator } from "react-native";
 import * as WebBrowser from "expo-web-browser";
-import { Lock, ShieldCheck, TriangleAlert } from "lucide-react-native";
+import { Lock, ShieldCheck } from "lucide-react-native";
 import { useTheme } from "@/theme/ThemeContext";
 import { fonts, radii } from "@/theme/tokens";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -11,7 +11,7 @@ import { CurrencyField } from "@/components/CurrencyField";
 import { PhotosField } from "@/components/PhotosField";
 import { useChargerStore, namesMatch } from "@/state/ChargerStoreContext";
 import { useAuth } from "@/state/AuthContext";
-import { createCharger, startEnodeLink, resolveEnodeLink } from "@/api/chargers";
+import { createCharger, startEnodeLink, resolveEnodeLink, startOcppOnboarding, getOcppConnectionStatus } from "@/api/chargers";
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
 import { CHARGER_MODELS, ROUTE_NOTES } from "@/data/mockChargers";
@@ -31,6 +31,13 @@ const RESOLVE_LINK_ATTEMPTS = 4;
 const RESOLVE_LINK_DELAY_MS = 1500;
 
 type EnodeLinkState = "idle" | "linking" | "resolving" | "linked" | "failed";
+
+// idle -> starting (minting a chargePointId) -> details (host is copying
+// them into their charger) -> checking (a manual "Check connection" poll)
+// -> connected once getOcppConnectionStatus genuinely reports true.
+// "details" and "checking" both keep the connection-details box visible —
+// checking just overlays a spinner on the check button.
+type OcppOnboardingState = "idle" | "starting" | "details" | "checking" | "connected" | "failed";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,6 +74,16 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
   const [enodeChargerId, setEnodeChargerId] = useState<string | null>(null);
   const [enodeLinkMessage, setEnodeLinkMessage] = useState<string | null>(null);
 
+  // Same hard-gated shape as Enode's Link state above — ocppChargePointId
+  // only ever reaches "connected" once getOcppConnectionStatus has
+  // independently confirmed (against OcppCentralSystem's own live
+  // connection map, server-side) that a real charge point has connected
+  // under this exact identity.
+  const [ocppState, setOcppState] = useState<OcppOnboardingState>("idle");
+  const [ocppChargePointId, setOcppChargePointId] = useState<string | null>(null);
+  const [ocppWsUrl, setOcppWsUrl] = useState<string | null>(null);
+  const [ocppMessage, setOcppMessage] = useState<string | null>(null);
+
   const selectModel = (m: ChargerModelOption) => {
     setModel(m);
     // Switching models mid-flow invalidates whatever was just linked —
@@ -75,6 +92,10 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
     setEnodeLinkState("idle");
     setEnodeChargerId(null);
     setEnodeLinkMessage(null);
+    setOcppState("idle");
+    setOcppChargePointId(null);
+    setOcppWsUrl(null);
+    setOcppMessage(null);
   };
 
   const startLink = async () => {
@@ -113,17 +134,52 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
     }
   };
 
-  // OCPP onboarding isn't live yet (see ChargersService — this is a real
-  // server-side block too, not just a UI restriction) — Add Charger can't
-  // complete for an OCPP-route model at all right now, full stop.
+  const startOcppOnboardingFlow = async () => {
+    if (!model || model.route !== "ocpp") return;
+    setOcppState("starting");
+    setOcppMessage(null);
+    try {
+      const { chargePointId, wsUrl } = await startOcppOnboarding();
+      setOcppChargePointId(chargePointId);
+      setOcppWsUrl(wsUrl);
+      setOcppState("details");
+    } catch (err) {
+      setOcppState("failed");
+      setOcppMessage(err instanceof ApiError ? err.message : "Couldn't generate connection details — try again.");
+    }
+  };
+
+  // A manual "Check connection" tap, not a background poll — a host is
+  // meant to go configure their physical charger's own OCPP settings in
+  // between, which happens outside this app entirely; there's nothing to
+  // usefully poll for until they've actually done that and come back.
+  const checkOcppConnection = async () => {
+    if (!ocppChargePointId) return;
+    setOcppState("checking");
+    setOcppMessage(null);
+    try {
+      const { connected } = await getOcppConnectionStatus(ocppChargePointId);
+      if (connected) {
+        setOcppState("connected");
+      } else {
+        setOcppState("details");
+        setOcppMessage("Not connected yet — double-check the details below are entered exactly, then try again.");
+      }
+    } catch (err) {
+      setOcppState("details");
+      setOcppMessage(err instanceof ApiError ? err.message : "Couldn't check connection status — try again.");
+    }
+  };
+
   const isOcppModel = model?.route === "ocpp";
   const isEnodeModel = model?.route === "enode";
   const enodeLinked = isEnodeModel && enodeLinkState === "linked" && !!enodeChargerId;
+  const ocppConnected = isOcppModel && ocppState === "connected" && !!ocppChargePointId;
 
   const canSubmit =
     !!model &&
     postcode.trim().length > 0 &&
-    !isOcppModel &&
+    (!isOcppModel || ocppConnected) &&
     (!isEnodeModel || enodeLinked);
   const existingNames = siblingNames(null);
   const isDuplicate = name.trim() !== "" && existingNames.some((n) => namesMatch(n, name));
@@ -156,8 +212,9 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         // sending them would just be rejected (see CreateChargerDto).
         noShowFee,
         hostCost,
-        connectionRoute: "ENODE",
+        connectionRoute: isOcppModel ? "OCPP" : "ENODE",
         enodeChargerId: enodeChargerId ?? undefined,
+        ocppChargePointId: ocppChargePointId ?? undefined,
         available: true,
         photos: photos.map((p) => p.key),
       });
@@ -194,18 +251,53 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
           ))}
         </ScrollView>
         {model && (
-          <View style={{ backgroundColor: tokens.surface, borderLeftWidth: 2, borderLeftColor: isOcppModel ? tokens.danger : tokens.cyan, borderTopRightRadius: radii.lg, borderBottomRightRadius: radii.lg, padding: 14, marginBottom: 20 }}>
+          <View style={{ backgroundColor: tokens.surface, borderLeftWidth: 2, borderLeftColor: tokens.cyan, borderTopRightRadius: radii.lg, borderBottomRightRadius: radii.lg, padding: 14, marginBottom: 20 }}>
             <Text style={{ fontSize: 13, fontWeight: "500", color: tokens.text, marginBottom: 4 }}>
               {model.power} · Type 2{cableProvided ? " · tethered" : ""}
             </Text>
             <Text style={{ fontSize: 12, color: tokens.textSoft, lineHeight: 17, marginBottom: isOcppModel || isEnodeModel ? 12 : 0 }}>{ROUTE_NOTES[model.route]}</Text>
 
             {isOcppModel && (
-              <View style={{ flexDirection: "row", gap: 8, backgroundColor: "rgba(232,132,107,0.1)", borderWidth: 1, borderColor: "rgba(232,132,107,0.35)", borderRadius: radii.md, padding: 12 }}>
-                <TriangleAlert size={14} color={tokens.danger} style={{ marginTop: 1 }} />
-                <Text style={{ flex: 1, fontSize: 12, color: tokens.text, lineHeight: 17 }}>
-                  OCPP charger onboarding isn't available yet — this requires Kelo's own servers to be live first. You can't list an OCPP charger right now.
-                </Text>
+              <View>
+                {ocppConnected ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: tokens.cyanTint10, borderWidth: 1, borderColor: tokens.cyanTint30, borderRadius: radii.md, padding: 12 }}>
+                    <ShieldCheck size={15} color={tokens.cyan} />
+                    <Text style={{ flex: 1, fontSize: 12.5, color: tokens.text }}>Charger connected — receiving real OCPP messages.</Text>
+                  </View>
+                ) : ocppState === "idle" || ocppState === "starting" || ocppState === "failed" ? (
+                  <>
+                    <GhostButton onPress={startOcppOnboardingFlow} disabled={ocppState === "starting"} style={{ paddingVertical: 11 }}>
+                      {ocppState === "starting" ? (
+                        <ActivityIndicator color={tokens.text} />
+                      ) : (
+                        <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13.5, color: tokens.text }}>
+                          {ocppState === "failed" ? "Try again" : "Get connection details"}
+                        </Text>
+                      )}
+                    </GhostButton>
+                    {ocppMessage && (
+                      <Text style={{ fontSize: 11.5, color: tokens.danger, lineHeight: 16, marginTop: 8 }}>{ocppMessage}</Text>
+                    )}
+                  </>
+                ) : (
+                  <View>
+                    <Text style={{ fontSize: 11.5, color: tokens.textSoft, lineHeight: 16, marginBottom: 8 }}>
+                      Enter these into your charger's own OCPP settings, exactly as shown:
+                    </Text>
+                    <View style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, padding: 12, marginBottom: 10 }}>
+                      <Text style={{ fontFamily: fonts.mono, fontSize: 10.5, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>WebSocket URL</Text>
+                      <Text selectable style={{ fontFamily: fonts.mono, fontSize: 12, color: tokens.text, marginBottom: 10 }}>{ocppWsUrl}</Text>
+                      <Text style={{ fontFamily: fonts.mono, fontSize: 10.5, color: tokens.textSoft, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Charge point ID</Text>
+                      <Text selectable style={{ fontFamily: fonts.mono, fontSize: 12, color: tokens.text }}>{ocppChargePointId}</Text>
+                    </View>
+                    <GhostButton onPress={checkOcppConnection} disabled={ocppState === "checking"} style={{ paddingVertical: 11 }}>
+                      {ocppState === "checking" ? <ActivityIndicator color={tokens.text} /> : <Text style={{ fontFamily: fonts.bodyMedium, fontSize: 13.5, color: tokens.text }}>Check connection</Text>}
+                    </GhostButton>
+                    {ocppMessage && (
+                      <Text style={{ fontSize: 11.5, color: tokens.textSoft, lineHeight: 16, marginTop: 8 }}>{ocppMessage}</Text>
+                    )}
+                  </View>
+                )}
               </View>
             )}
 
@@ -360,8 +452,8 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         </PrimaryButton>
         {!canSubmit && (
           <Text style={{ marginTop: 10, fontSize: 11.5, color: tokens.textSoft, textAlign: "center" }}>
-            {isOcppModel
-              ? "OCPP charging isn't available yet — Kelo's own servers need to be live first."
+            {isOcppModel && !ocppConnected
+              ? "Get your connection details and connect your charger before you can list it."
               : isEnodeModel && !enodeLinked
                 ? "Connect your charger via Enode before you can list it."
                 : "Pick a charger model and add your postcode to continue."}

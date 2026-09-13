@@ -45,6 +45,24 @@ export class ChargersController {
     return this.chargersService.resolveEnodeLink(user.userId, dto.existingChargerIds);
   }
 
+  // The OCPP-route equivalent of enode/link-session — mints a fresh
+  // charge-point identity and the WebSocket URL to enter into the
+  // physical charger's own OCPP settings. Not scoped to a charger id for
+  // the same reason photos/upload-url isn't: no charger row exists yet.
+  @Post("ocpp/start-onboarding")
+  startOcppOnboarding() {
+    return this.chargersService.startOcppOnboarding();
+  }
+
+  // Polled by the app while showing connection details, to learn the
+  // moment a real charge point actually connects under this id — see
+  // OcppOnboardingService.isConnected. Must come before @Get(":id"), same
+  // reasoning as "discover"/"stats" below.
+  @Get("ocpp/connection-status/:chargePointId")
+  ocppConnectionStatus(@Param("chargePointId") chargePointId: string) {
+    return this.chargersService.isOcppConnected(chargePointId);
+  }
+
   @Get()
   findAll(@CurrentUser() user: RequestUser) {
     return this.chargersService.findAllForOwner(user.userId);

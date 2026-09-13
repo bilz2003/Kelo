@@ -121,6 +121,11 @@ export interface ChargerWriteFields {
   // independently re-verifies this against Enode's own API rather than
   // trusting it at face value.
   enodeChargerId?: string;
+  // Only meaningful (and only checked server-side) when connectionRoute
+  // is OCPP — the identity minted by startOcppOnboarding, confirmed
+  // server-side to have actually connected before the charger can be
+  // created (see ChargersService.create).
+  ocppChargePointId?: string;
   available?: boolean;
   photos?: string[];
 }
@@ -248,6 +253,17 @@ export function startEnodeLink(): Promise<{ linkUrl: string; existingChargerIds:
 
 export function resolveEnodeLink(existingChargerIds: string[]): Promise<{ chargerId: string | null }> {
   return apiFetch("/chargers/enode/resolve-link", { method: "POST", body: { existingChargerIds } });
+}
+
+// The OCPP-route equivalent of startEnodeLink — mints a fresh charge-point
+// identity and the exact WebSocket URL to enter into the physical
+// charger's own OCPP settings. See OcppOnboardingService server-side.
+export function startOcppOnboarding(): Promise<{ chargePointId: string; wsUrl: string }> {
+  return apiFetch("/chargers/ocpp/start-onboarding", { method: "POST" });
+}
+
+export function getOcppConnectionStatus(chargePointId: string): Promise<{ connected: boolean }> {
+  return apiFetch(`/chargers/ocpp/connection-status/${encodeURIComponent(chargePointId)}`);
 }
 
 // Real "across all chargers" totals for a period — the backend aggregates

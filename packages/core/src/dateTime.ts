@@ -28,7 +28,18 @@ export const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 
 export const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 export const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-export const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+// Genuinely the last instant of the month (23:59:59.999 on its last day),
+// not midnight at the *start* of that day — a real bug this used to be:
+// `new Date(year, month+1, 0)` is day-0-of-next-month, which is the right
+// day but the wrong end of it. Every consumer (defaultTimeRange,
+// TimeFilterButton's month picker) filters inclusively against this value
+// (arrival/createdAt <= range.end), so a transaction dated any time after
+// midnight on the last day of a month fell into neither that month's
+// filter nor the next one's (whose own start is midnight on day 1) —
+// confirmed and fixed here at the one place both BookingsScreen and My
+// Chargers' stats derive their range from, rather than patching each
+// inclusive comparison separately.
+export const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 export const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, 1);
 export const dayEndOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 45);
 

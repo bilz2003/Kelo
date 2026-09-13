@@ -14,7 +14,7 @@ export const CHARGER_MODELS: ChargerModelOption[] = [
 ];
 
 export const ROUTE_NOTES: Record<ChargerModelOption["route"], string> = {
-  ocpp: "Connects via direct OCPP. Enable OCPP mode in your charger's own app first, then point it at Kelo.",
+  ocpp: "Connects via direct OCPP. Get your connection details below, enter them into your charger's own OCPP settings, then confirm once it's online.",
   enode: "Connects via Enode. Tap Connect and sign in with your existing charger account — no new login needed.",
 };
 

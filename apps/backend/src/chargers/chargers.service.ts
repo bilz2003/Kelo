@@ -6,6 +6,7 @@ import { GeocodingService } from "../geocoding/geocoding.service";
 import { haversineMiles } from "../geocoding/haversine";
 import { PhotosService } from "../photos/photos.service";
 import { EnodeLinkService } from "./enode-link.service";
+import { OcppOnboardingService } from "../sessions/ocpp/ocpp-onboarding.service";
 import { DEFAULT_SEARCH_ORIGIN } from "./search-origin";
 import { CreateChargerDto } from "./dto/create-charger.dto";
 import { UpdateChargerDto } from "./dto/update-charger.dto";
@@ -51,6 +52,7 @@ export class ChargersService {
     private readonly geocoding: GeocodingService,
     private readonly photos: PhotosService,
     private readonly enodeLink: EnodeLinkService,
+    private readonly ocppOnboarding: OcppOnboardingService,
   ) {}
 
   createPhotoUploadUrl(ownerId: number, contentType: string) {
@@ -74,16 +76,28 @@ export class ChargersService {
     return this.enodeLink.resolveNewCharger(ownerId, existingChargerIds);
   }
 
+  // The OCPP-route equivalent of startEnodeLink — mints the charge-point
+  // identity and WebSocket URL a host needs to enter into their physical
+  // charger's own settings. See OcppOnboardingService.
+  startOcppOnboarding() {
+    return this.ocppOnboarding.startOnboarding();
+  }
+
+  isOcppConnected(chargePointId: string) {
+    return { connected: this.ocppOnboarding.isConnected(chargePointId) };
+  }
+
   /**
    * Real, hard-blocking gates — not soft warnings — on what connectionRoute
    * a charger can actually be created with right now:
    *
-   * - OCPP: no real connection can be established yet (Kelo's own OCPP
-   *   central system has nothing publicly reachable for real hardware to
-   *   connect to — see OCPP-INTEGRATION.md). Blocked server-side, not
-   *   just hidden in the UI, so this can't be bypassed by calling the API
-   *   directly. Temporary — flip OCPP_ONBOARDING_ENABLED once real
-   *   connectivity exists; nothing else about this method needs to change.
+   * - OCPP: requires a real charge point to have actually connected to
+   *   Kelo's own OCPP central system under this exact chargePointId (see
+   *   OcppOnboardingService.isConnected, which reflects a genuine
+   *   BootNotification handshake — see OcppCentralSystem.onClient) — not
+   *   merely that a host generated one and never plugged anything in.
+   *   Mirrors the ENODE gate below exactly: a client-supplied id is never
+   *   trusted at face value, only a server-verified one.
    * - ENODE: requires a real, already-completed Link (see
    *   EnodeLinkService) — enodeChargerId must be present *and* verified
    *   as genuinely belonging to this host's own linked Enode account,
@@ -97,13 +111,14 @@ export class ChargersService {
    *   (see this project's own seeded demo chargers), so this is a UI-only
    *   restriction for Mock, not an API one.
    */
-  private static readonly OCPP_ONBOARDING_ENABLED = false;
-
   async create(ownerId: number, dto: CreateChargerDto) {
-    if (dto.connectionRoute === ConnectionRoute.OCPP && !ChargersService.OCPP_ONBOARDING_ENABLED) {
-      throw new BadRequestException(
-        "OCPP charger onboarding isn't available yet — this requires Kelo's own servers to be live first.",
-      );
+    if (dto.connectionRoute === ConnectionRoute.OCPP) {
+      if (!dto.ocppChargePointId) {
+        throw new BadRequestException("Get connection details and connect your charger before adding it.");
+      }
+      if (!this.ocppOnboarding.isConnected(dto.ocppChargePointId)) {
+        throw new BadRequestException("This charger hasn't connected yet — check its OCPP settings and try again once it's online.");
+      }
     }
     if (dto.connectionRoute === ConnectionRoute.ENODE) {
       if (!dto.enodeChargerId) {
