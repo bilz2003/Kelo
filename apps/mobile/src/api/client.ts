@@ -151,7 +151,13 @@ export async function loginRequest(email: string, password: string): Promise<Tok
 }
 
 export async function registerRequest(email: string, password: string, name: string): Promise<TokenPair> {
-  return apiFetch<TokenPair>("/auth/register", { method: "POST", body: { email, password, name }, auth: false });
+  // createdVia records which client registered this account (the website's
+  // server sends "web") — required by the backend, see RegisterDto.
+  return apiFetch<TokenPair>("/auth/register", {
+    method: "POST",
+    body: { email, password, name, createdVia: "mobile" },
+    auth: false,
+  });
 }
 
 export async function logoutRequest(refreshToken: string): Promise<void> {

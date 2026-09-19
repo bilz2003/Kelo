@@ -1,4 +1,5 @@
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { CreatedVia } from "@prisma/client";
 
 export class RegisterDto {
   @IsEmail()
@@ -21,4 +22,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  // Required, not defaulted: a missing value silently becoming "mobile"
+  // (or "web") would quietly mislabel accounts. Each client states its own
+  // source — the mobile app sends "mobile", the website's server sends
+  // "web". Self-reported, so an analytics signal only, never a permission.
+  @IsEnum(CreatedVia, { message: 'createdVia must be "web" or "mobile"' })
+  createdVia!: CreatedVia;
 }

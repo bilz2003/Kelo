@@ -1,0 +1,24 @@
+{
+  "name": "@kelo/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kelo/core": "*",
+    "next": "^16.3.5",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "~19.2.4",
+    "@types/react-dom": "~19.2.7",
+    "typescript": "~5.9.2"
+  }
+}

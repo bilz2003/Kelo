@@ -17,6 +17,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Which client an account was registered through — set once at
+// registration and never changed. Self-reported by the registering client
+// (the website's server injects "web"; the mobile app sends "mobile"), so
+// it's an analytics/support signal, not a security boundary.
+enum CreatedVia {
+  web
+  mobile
+}
+
 enum CableType {
   TETHERED
   BRING_YOUR_OWN
@@ -71,6 +80,7 @@ model User {
   // staleness handling this app has no other use for right now. Worth
   // revisiting if multi-device turns out to matter.
   pushToken              String?
+  createdVia             CreatedVia
   createdAt              DateTime @default(now())
 
   chargers      Charger[]

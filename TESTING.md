@@ -99,8 +99,13 @@ exact text, not just "it looks right."
   `Linking.openURL()` calls. `react-native-web` doesn't render `Linking`
   targets as real anchor tags — evaluate a `window.open` monkey-patch before
   the click instead of reading `href` off the DOM afterward.
+- **Playwright is a declared root devDependency** (`playwright` in the root
+  `package.json`), so `npm install` keeps it. It ships without browser
+  binaries — run `npx playwright install chromium` once per machine. (It used
+  to be installed ad hoc and undeclared, so a plain `npm install` pruned it.)
 - **Fresh throwaway accounts per run**, registered via a direct
-  `curl -X POST /auth/register` before launching the browser — real backend,
+  `curl -X POST /auth/register` before launching the browser (the body needs
+  `"createdVia": "mobile"` — the backend requires it since the website shipped) — real backend,
   real auth, no seed/fixture users. Clean up afterward the same way every
   other real-data test in this project does (delete the rows via `psql`
   through the tunnel) — respect foreign keys in delete order (Transaction /

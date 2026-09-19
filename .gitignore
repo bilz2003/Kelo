@@ -33,6 +33,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# Next.js (apps/web)
+.next/
+next-env.d.ts
+
 # CDK
 cdk.out/
 cdk.context.json

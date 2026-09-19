@@ -66,6 +66,7 @@ export class AuthService {
         passwordHash,
         name: dto.name,
         phone: dto.phone,
+        createdVia: dto.createdVia,
       },
     });
 
