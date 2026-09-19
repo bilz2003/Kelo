@@ -31,6 +31,11 @@ export interface ChargerModelOption {
   power: string;
   powerNum: number;
   route: "ocpp" | "enode";
+  // false hides this model from the picker without deleting its entry —
+  // e.g. an Enode-route model pending that vendor's response. Everything
+  // else about the entry (route, power) stays real and correct, so
+  // flipping this back to true is the entire re-enable.
+  enabled: boolean;
 }
 
 export interface BookingDetails {

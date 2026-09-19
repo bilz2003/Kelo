@@ -246,7 +246,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
           contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 4 }}
           style={{ marginHorizontal: -20, marginBottom: model ? 12 : 20 }}
         >
-          {CHARGER_MODELS.map((m) => (
+          {CHARGER_MODELS.filter((m) => m.enabled).map((m) => (
             <Chip key={m.title} active={model?.title === m.title} onPress={() => selectModel(m)}>{m.title}</Chip>
           ))}
         </ScrollView>
