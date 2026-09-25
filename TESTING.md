@@ -105,7 +105,7 @@ exact text, not just "it looks right."
   to be installed ad hoc and undeclared, so a plain `npm install` pruned it.)
 - **Fresh throwaway accounts per run**, registered via a direct
   `curl -X POST /auth/register` before launching the browser (the body needs
-  `"createdVia": "mobile"` — the backend requires it since the website shipped) — real backend,
+  `"firstName"`, `"lastName"` and `"createdVia": "mobile"` — the backend requires all three) — real backend,
   real auth, no seed/fixture users. Clean up afterward the same way every
   other real-data test in this project does (delete the rows via `psql`
   through the tunnel) — respect foreign keys in delete order (Transaction /

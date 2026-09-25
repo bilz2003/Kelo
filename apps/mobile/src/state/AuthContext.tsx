@@ -19,7 +19,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
   // True only immediately after a login()/register() call in *this* app
@@ -85,10 +85,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (email: string, password: string, name: string) => {
+  const register = useCallback(async (email: string, password: string, firstName: string, lastName: string) => {
     setError(null);
     try {
-      const result = await registerRequest(email, password, name);
+      const result = await registerRequest(email, password, firstName, lastName);
       await storeTokens(result.accessToken, result.refreshToken);
       setUser(result.user);
       setStatus("authenticated");

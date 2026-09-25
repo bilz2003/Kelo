@@ -7,8 +7,8 @@ Part of the monorepo described in the [root README](../../README.md).
 
 | Area | Routes |
 |---|---|
-| Marketing (public) | `/`, `/metering`, `/hosts` |
-| Auth | `/login`, `/register` |
+| Marketing (public) | `/` — one page: hero, problem, how it works, drivers/hosts, earnings estimator, one account. (`/hosts` and `/metering` redirect to its `#hosts` / `#how-it-works` sections.) |
+| Auth | `/login`, `/register` (First name, Last name, Email, Confirm email, Password, Confirm password) |
 | Dashboard (signed in) | `/dashboard` (My chargers, availability), `/dashboard/chargers/[id]` (edit details + photos, remove), `/dashboard/earnings` |
 
 **Not on the website, by design:** booking, Discover, live sessions, and *Add Charger* (adding a
@@ -58,10 +58,24 @@ The private bucket needs no CORS configuration because the browser never talks t
 
 ## Design
 
-Colours, radii and typeface roles come from `@kelo/core`'s shared tokens
-(`packages/core/src/tokens.ts`), emitted as CSS variables in `src/lib/tokensCss.ts` — the
-stylesheet holds no hex values of its own. Rules: cyan only for verified / live / interactive
-things; mono type for measured figures; structure from hairlines, not shadows or gradients.
+The website is **light-mode only**, deliberately different from the mobile app's dark default. It was built
+from three finished HTML mockups (homepage, log in, sign up) — the pages match them pixel-for-pixel at
+1440/900/600/480/390 px — and the dashboard, which was never mocked, follows the same language.
 
-Marketing copy is **first-draft**: it describes only what the product does today, with no
-testimonials, customer logos, or usage numbers (none exist yet).
+- **Tokens** come from `@kelo/core` (`LIGHT_TOKENS`), emitted as CSS variables in `src/lib/tokensCss.ts`;
+  `globals.css` holds no colour values of its own.
+- **Cyan has two roles.** Bright `#4FD8C4` is for fills and decoration (buttons, the network pattern, switch
+  thumbs). Cyan as readable *text* (links, small labels) is the darker `--cyan-text` (`cyanText`, `#0A6F5F`),
+  which measures 4.66:1 or better on every surface it sits on (WCAG AA for small text). Error text uses
+  `--danger-text` (`#B03A22`) because the coral `danger` fill is ~2.3:1 on this background.
+- **Fonts:** Archivo 700 (headlines, card titles), Public Sans (body and section headings), JetBrains Mono
+  (figures, small labels), Space Grotesk 700 (the "kelo." wordmark only). They load via `src/lib/fonts.ts`,
+  which asserts them against `@kelo/core`'s `fontFamilies`, so the site can't drift from the app.
+- **The animated network** (`components/NetworkBackground.tsx`): on the homepage it's three layers moved at
+  different rates by scroll (`HeroParallax`); on log in / sign up it's the same layers as a fixed background
+  with continuous pulse and data-flow animation. Both are switched off under `prefers-reduced-motion`.
+- **Content rules (public pages):** no testimonials, customer logos or user counts (none exist), and Kelo's
+  commission figure is never displayed. The earnings estimator shows only the host's take-home figure; its
+  share is derived from the same commission constant the backend prices sessions with.
+
+Homepage copy is **first-draft**. "Download Kelo" is a placeholder link — no store listing exists yet.

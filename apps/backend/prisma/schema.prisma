@@ -70,7 +70,12 @@ model User {
   id                     Int      @id @default(autoincrement())
   email                  String   @unique
   passwordHash           String
-  name                   String
+  // Stored separately (was a single `name`) so each context can use the right
+  // part: first name alone for "{firstName}'s driveway", both for avatar initials
+  // and the account/host views. lastName may be "" for a member whose original
+  // single-word name couldn't be split — new registrations always supply both.
+  firstName              String
+  lastName               String
   phone                  String?
   stripeCustomerId       String?
   stripeConnectAccountId String?

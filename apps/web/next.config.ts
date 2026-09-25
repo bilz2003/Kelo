@@ -31,6 +31,14 @@ const config: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   turbopack: { root: path.join(__dirname, "../..") },
   poweredByHeader: false,
+  // /hosts and /metering were folded into the homepage (its #hosts and
+  // #how-it-works sections) when the site was restyled from the finished mockups.
+  async redirects() {
+    return [
+      { source: "/hosts", destination: "/#hosts", permanent: true },
+      { source: "/metering", destination: "/#how-it-works", permanent: true },
+    ];
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

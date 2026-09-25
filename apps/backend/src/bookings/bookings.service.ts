@@ -110,7 +110,7 @@ export class BookingsService {
         id: true,
         arrivalAt: true,
         endAt: true,
-        driver: { select: { id: true, name: true } },
+        driver: { select: { id: true, firstName: true, lastName: true } },
         charger: { select: { id: true, title: true } },
       },
     });

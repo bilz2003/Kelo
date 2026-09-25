@@ -26,9 +26,18 @@ export interface ThemeTokens {
   cyan: string; // Signal accent — verified/interactive/live, used consistently
   cyanTint10: string;
   cyanTint30: string;
+  // Cyan used AS TEXT (links, small labels). The bright accent is fine as a
+  // fill or decoration but far too light as text on a light background
+  // (1.5:1 on #EDEEF0), so light mode uses a darkened variant. Dark mode has no
+  // such problem and reuses the accent. Fills/decoration always use `cyan`.
+  cyanText: string;
   text: string; // primary text
   textSoft: string; // secondary/muted text
   danger: string;
+  // The danger colour as text (form errors). #E8846B is 2.3:1 on the light
+  // background, which is unreadable for an error message; light mode darkens it.
+  dangerText: string;
+  field: string; // text-input fill
   onAccent: string; // fixed dark ink, for text/icons on the cyan accent — same in both modes
 }
 
@@ -40,9 +49,12 @@ export const DARK_TOKENS: ThemeTokens = {
   cyan: "#4FD8C4",
   cyanTint10: "rgba(79,216,196,0.1)",
   cyanTint30: "rgba(79,216,196,0.3)",
+  cyanText: "#4FD8C4",
   text: "#EDEEF0",
   textSoft: "#8891A0",
   danger: "#E8846B",
+  dangerText: "#E8846B",
+  field: "#222A34",
   onAccent: "#12161C",
 };
 
@@ -54,9 +66,12 @@ export const LIGHT_TOKENS: ThemeTokens = {
   cyan: "#4FD8C4",
   cyanTint10: "rgba(79,216,196,0.12)",
   cyanTint30: "rgba(79,216,196,0.35)",
+  cyanText: "#0A6F5F", // website rule: readable cyan text is this darker variant (>= 4.66:1 on every surface it sits on; #0E8C79 was 3.2-3.6:1)
   text: "#12161C", // was Ink — now primary text
   textSoft: "#2C3540", // was Hair — now secondary text
   danger: "#E8846B",
+  dangerText: "#B03A22",
+  field: "#FFFFFF",
   onAccent: "#12161C",
 };
 
@@ -73,6 +88,15 @@ export const BRAND_MARK = {
   edge: "#2C3540",
   signal: "#4FD8C4",
   nodeFill: "#222A34",
+};
+
+// The same mark on a LIGHT background (the website): the frame is a soft grey
+// rather than the dark theme's near-black, and the outer nodes are hollow rings.
+export const BRAND_MARK_LIGHT = {
+  edge: "#8891A0",
+  edgeOpacity: 0.5,
+  signal: "#4FD8C4",
+  ring: "#8891A0",
 };
 
 // Radii in px. Same scale on both platforms.
@@ -92,10 +116,28 @@ export const spacing = (n: number) => n * 4;
  * face ever changes.
  */
 export const fontFamilies = {
-  display: { family: "Bricolage Grotesque", weight: 700 }, // headlines, prices, big numbers
+  display: { family: "Archivo", weight: 700 }, // headlines, card titles
   body: { family: "Public Sans", weight: 400 },
   bodyMedium: { family: "Public Sans", weight: 500 },
   mono: { family: "JetBrains Mono", weight: 400 }, // reserved for measured figures — kWh, rates, timers
   monoMedium: { family: "JetBrains Mono", weight: 500 },
   wordmark: { family: "Space Grotesk", weight: 700 },
+} as const;
+
+/**
+ * Letter-spacing (tracking) in em, so it scales with type size on any
+ * platform (mobile multiplies by its font size; web uses it directly).
+ *
+ * Derived from mobile's real usages of the display face rather than chosen
+ * fresh: 8 call sites set -0.2px..-0.3px at 15-24px, i.e. -0.0105em to
+ * -0.0136em, most commonly -0.0125em (24px / -0.3px, on four screens).
+ * `wordmark` is the "kelo." mark's own value (15px / -0.2px).
+ *
+ * These are mobile's values (set when the display face was Bricolage Grotesque
+ * and kept when it became Archivo). The website follows its own finished
+ * mockups for headline tracking instead — see apps/web/src/app/globals.css.
+ */
+export const tracking = {
+  display: -0.0125,
+  wordmark: -0.0133,
 } as const;

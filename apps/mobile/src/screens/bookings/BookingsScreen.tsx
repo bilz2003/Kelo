@@ -8,7 +8,7 @@ import { GhostButton, PrimaryButton } from "@/components/Button";
 import { TimeFilterButton } from "@/components/TimeFilterButton";
 import { getMyBookings, cancelBooking, BookingDetail } from "@/api/bookings";
 import { ApiError } from "@/api/client";
-import { TimeRangeValue, defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay, FREE_CANCELLATION_WINDOW_HOURS } from "@kelo/core";
+import { TimeRangeValue, fullName, defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay, FREE_CANCELLATION_WINDOW_HOURS } from "@kelo/core";
 
 const STATUS_LABEL: Record<BookingDetail["status"], string> = {
   UPCOMING: "Upcoming",
@@ -53,7 +53,7 @@ function BookingCard({ booking, onCancelled }: { booking: BookingDetail; onCance
           {STATUS_LABEL[booking.status]}
         </Text>
       </View>
-      <Text style={{ fontSize: 12.5, color: tokens.textSoft, marginBottom: 10 }}>{booking.charger.owner.name}</Text>
+      <Text style={{ fontSize: 12.5, color: tokens.textSoft, marginBottom: 10 }}>{fullName(booking.charger.owner)}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: canCancel ? 12 : 0 }}>
         <Clock size={12} color={tokens.textSoft} />
         <Text style={{ fontSize: 12, color: tokens.textSoft }}>

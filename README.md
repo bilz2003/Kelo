@@ -62,9 +62,11 @@ They differ only in how they hold the tokens:
 ### Design tokens
 
 Colours, radii, spacing and typeface roles live once, framework-agnostically, in
-[`packages/core/src/tokens.ts`](packages/core/src/tokens.ts). Mobile re-exports them; web turns them
-into CSS variables. The brand rules apply on every surface: **cyan is reserved for things that are
-verified, live, or interactive — never decoration**, and mono type is for measured figures.
+[`packages/core/src/tokens.ts`](packages/core/src/tokens.ts). Mobile re-exports them (dark by default); web turns
+the **light** set into CSS variables — the website is light-mode only, on purpose. Brand rules apply on every
+surface: **bright cyan is for fills and decoration; cyan used as readable text is a darker variant**
+(`cyanText`) because the bright one is too pale on light backgrounds; mono type is for measured figures. The
+display face is **Archivo** on both apps; the "kelo." wordmark stays Space Grotesk.
 
 ## Getting started
 

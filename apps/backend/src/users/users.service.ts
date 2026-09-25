@@ -21,7 +21,8 @@ export class UsersService {
       select: {
         id: true,
         email: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         phone: true,
         stripeCustomerId: true,
         stripeConnectAccountId: true,

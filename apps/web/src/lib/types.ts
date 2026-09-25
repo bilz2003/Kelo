@@ -4,7 +4,8 @@
 export interface AuthUser {
   id: number;
   email: string;
-  name: string;
+  firstName: string;
+  lastName: string;
 }
 
 export interface TokenPair {

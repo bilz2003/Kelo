@@ -1,4 +1,4 @@
-import { Charger, ChargerModelOption } from "@kelo/core";
+import { Charger, ChargerModelOption, defaultListingName as coreDefaultListingName } from "@kelo/core";
 
 // Supported charger models, matching the two integration routes from the
 // product doc: direct OCPP 1.6-J vs the Enode aggregator.
@@ -22,4 +22,5 @@ export const ROUTE_NOTES: Record<ChargerModelOption["route"], string> = {
   enode: "Connects via Enode. Tap Connect and sign in with your existing charger account — no new login needed.",
 };
 
-export const defaultListingName = (c: Pick<Charger, "host">) => `${c.host}'s driveway`;
+// c.host is the host's FIRST name (see mapDiscoverCharger / ownerIdentityOf) — the wording itself lives in @kelo/core so web and mobile can't drift.
+export const defaultListingName = (c: Pick<Charger, "host">) => coreDefaultListingName(c.host);

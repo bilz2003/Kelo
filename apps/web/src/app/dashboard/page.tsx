@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AvailabilitySwitch } from "@/components/AvailabilitySwitch";
 import { apiGet } from "@/lib/serverApi";
+import { defaultListingName } from "@kelo/core";
 import { gbp } from "@/lib/money";
 import type { AuthUser, OwnerCharger } from "@/lib/types";
 
@@ -14,7 +15,7 @@ export default async function MyChargersPage() {
   return (
     <>
       <div className="page-head">
-        <span className="label">Dashboard</span>
+        <span className="eyebrow">Dashboard</span>
         <h1 className="display h2">My chargers</h1>
       </div>
 
@@ -40,7 +41,7 @@ export default async function MyChargersPage() {
                 )}
               </div>
               <div>
-                <h3>{c.listingName ?? `${me.name}'s driveway`}</h3>
+                <h3>{c.listingName ?? defaultListingName(me.firstName)}</h3>
                 <div className="meta">
                   <span>{c.title}</span>
                   <span>{c.powerKw} kW</span>

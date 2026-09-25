@@ -40,9 +40,11 @@ export const PUBLIC_CHARGER_SELECT = {
   createdAt: true,
   photoKeys: true,
   // The host's name, not their contact details — same as any marketplace
-  // listing (Airbnb, etc.) showing who you'd be dealing with before you
-  // book. Not remotely the same privacy class as fullAddress/hostCost.
-  owner: { select: { name: true } },
+  // listing (Airbnb, etc.) showing who you'd be dealing with before you book.
+  // First AND last are sent: clients use the first name in the default listing
+  // name ("{firstName}'s driveway") and both for avatar initials. Not remotely
+  // the same privacy class as fullAddress/hostCost.
+  owner: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.ChargerSelect;
 
 @Injectable()

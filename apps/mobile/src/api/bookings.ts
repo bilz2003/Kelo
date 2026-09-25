@@ -5,7 +5,7 @@ export interface NextHostBooking {
   id: number;
   arrivalAt: string;
   endAt: string;
-  driver: { id: number; name: string };
+  driver: { id: number; firstName: string; lastName: string };
   charger: { id: number; title: string };
 }
 

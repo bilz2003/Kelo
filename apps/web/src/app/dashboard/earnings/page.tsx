@@ -6,7 +6,7 @@ export default function EarningsPage() {
   return (
     <>
       <div className="page-head">
-        <span className="label">Dashboard</span>
+        <span className="eyebrow">Dashboard</span>
         <h1 className="display h2">Earnings</h1>
       </div>
       <EarningsView />

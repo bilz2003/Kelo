@@ -9,18 +9,19 @@ import { useAuth } from "@/state/AuthContext";
 export function RegisterScreen({ onBack }: { onBack: () => void }) {
   const { tokens } = useTheme();
   const { register, error, clearError } = useAuth();
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = name.trim().length > 0 && email.trim().length > 0 && password.length > 0 && !submitting;
+  const canSubmit = firstName.trim().length > 0 && lastName.trim().length > 0 && email.trim().length > 0 && password.length > 0 && !submitting;
 
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await register(email.trim().toLowerCase(), password, name.trim());
+      await register(email.trim().toLowerCase(), password, firstName.trim(), lastName.trim());
     } catch {
       // error already surfaced via useAuth().error
     } finally {
@@ -52,16 +53,31 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
           One account for booking chargers and hosting your own — no separate driver/host signup.
         </Text>
 
-        <Text style={label}>Name</Text>
+        <Text style={label}>First name</Text>
         <TextInput
-          value={name}
+          value={firstName}
           onChangeText={(v) => {
-            setName(v);
+            setFirstName(v);
             if (error) clearError();
           }}
-          placeholder="Your name"
+          placeholder="First name"
           placeholderTextColor={tokens.textSoft}
-          textContentType="name"
+          textContentType="givenName"
+          maxLength={50}
+          style={inputStyle}
+        />
+
+        <Text style={label}>Last name</Text>
+        <TextInput
+          value={lastName}
+          onChangeText={(v) => {
+            setLastName(v);
+            if (error) clearError();
+          }}
+          placeholder="Last name"
+          placeholderTextColor={tokens.textSoft}
+          textContentType="familyName"
+          maxLength={50}
           style={inputStyle}
         />
 

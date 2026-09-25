@@ -13,7 +13,8 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 interface AuthUser {
   id: number;
   email: string;
-  name: string;
+  firstName: string;
+  lastName: string;
 }
 
 @Injectable()
@@ -49,7 +50,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken: refreshTokenPlain,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
     };
   }
 
@@ -64,7 +65,8 @@ export class AuthService {
       data: {
         email: dto.email,
         passwordHash,
-        name: dto.name,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
         phone: dto.phone,
         createdVia: dto.createdVia,
       },

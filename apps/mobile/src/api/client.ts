@@ -20,7 +20,8 @@ export class ApiError extends Error {
 export interface AuthUser {
   id: number;
   email: string;
-  name: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface TokenPair {
@@ -150,12 +151,12 @@ export async function loginRequest(email: string, password: string): Promise<Tok
   return apiFetch<TokenPair>("/auth/login", { method: "POST", body: { email, password }, auth: false });
 }
 
-export async function registerRequest(email: string, password: string, name: string): Promise<TokenPair> {
+export async function registerRequest(email: string, password: string, firstName: string, lastName: string): Promise<TokenPair> {
   // createdVia records which client registered this account (the website's
   // server sends "web") — required by the backend, see RegisterDto.
   return apiFetch<TokenPair>("/auth/register", {
     method: "POST",
-    body: { email, password, name, createdVia: "mobile" },
+    body: { email, password, firstName, lastName, createdVia: "mobile" },
     auth: false,
   });
 }

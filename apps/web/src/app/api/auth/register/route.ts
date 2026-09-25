@@ -7,18 +7,30 @@ import type { TokenPair } from "@/lib/types";
 // BFF registration: the SAME backend /auth/register the mobile app calls.
 // `createdVia: "web"` is injected here, server-side — the browser never
 // supplies it, and any createdVia (or other unexpected field) in the request
-// body is dropped by only forwarding the three fields the form has.
+// body is dropped by only forwarding what this route builds itself.
+//
+// The form has First name / Last name / Confirm email / Confirm password. First
+// and last name are stored separately (User.firstName / User.lastName) and passed
+// through as-is — the backend, not this route, owns their length rules. The
+// confirm fields are re-checked server-side too: the client check is a
+// convenience, not a guarantee.
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) return NextResponse.json({ message: "Forbidden" }, { status: 403 });
 
-  const input = (await req.json().catch(() => null)) as { name?: unknown; email?: unknown; password?: unknown } | null;
-  if (typeof input?.name !== "string" || typeof input?.email !== "string" || typeof input?.password !== "string") {
-    return NextResponse.json({ message: "Enter your name, email and a password." }, { status: 400 });
-  }
+  const input = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  const str = (k: string) => (typeof input?.[k] === "string" ? (input[k] as string) : null);
+  const firstName = str("firstName")?.trim(), lastName = str("lastName")?.trim();
+  const email = str("email")?.trim(), confirmEmail = str("confirmEmail")?.trim();
+  const password = str("password"), confirmPassword = str("confirmPassword");
+
+  if (!firstName || !lastName) return NextResponse.json({ message: "Enter your first and last name." }, { status: 400 });
+  if (!email || !password) return NextResponse.json({ message: "Enter your email and a password." }, { status: 400 });
+  if (email !== confirmEmail) return NextResponse.json({ message: "Emails don’t match." }, { status: 400 });
+  if (password !== confirmPassword) return NextResponse.json({ message: "Passwords don’t match." }, { status: 400 });
 
   const r = await backendRequest<TokenPair>("/auth/register", {
     method: "POST",
-    json: { name: input.name.trim(), email: input.email.trim(), password: input.password, createdVia: "web" },
+    json: { firstName, lastName, email, password, createdVia: "web" },
   });
   if (!r.ok) {
     const message =

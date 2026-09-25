@@ -21,7 +21,7 @@ export default async function EditChargerPage({ params }: { params: Promise<{ id
           {charger.title} · {charger.powerKw} kW · {charger.postcode}
         </p>
       </div>
-      <EditChargerForm charger={charger} ownerName={me.name} />
+      <EditChargerForm charger={charger} ownerFirstName={me.firstName} />
     </>
   );
 }

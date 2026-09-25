@@ -1,4 +1,4 @@
-import { Charger } from "@kelo/core";
+import { Charger, PersonName, initialsOf } from "@kelo/core";
 import { apiFetch } from "./client";
 
 /**
@@ -26,7 +26,7 @@ export interface DiscoverCharger {
   lat: number;
   lng: number;
   createdAt: string;
-  owner: { name: string };
+  owner: { firstName: string; lastName: string };
   distanceMiles: number;
   photos: string[];
 }
@@ -150,13 +150,6 @@ export function toApiCable(cable: Charger["cable"]): DiscoverCharger["cable"] {
   return cable === "Tethered cable" ? "TETHERED" : "BRING_YOUR_OWN";
 }
 
-export function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
-
 /**
  * Maps the backend's discover shape onto @kelo/core's Charger type.
  * fullAddress/hostCost are optional on Charger precisely so a Discover-
@@ -169,8 +162,8 @@ export function initialsOf(name: string): string {
 export function mapDiscoverCharger(dc: DiscoverCharger): Charger {
   return {
     id: dc.id,
-    host: dc.owner.name,
-    initials: initialsOf(dc.owner.name),
+    host: dc.owner.firstName, // first name only: it builds the default "{host}'s driveway"
+    initials: initialsOf(dc.owner),
     postcode: dc.postcode,
     listingName: dc.listingName ?? undefined,
     title: dc.title,
@@ -207,17 +200,24 @@ export interface MyCharger extends Charger {
  * Maps an owner-scoped charger onto MyCharger. Unlike mapDiscoverCharger,
  * fullAddress/hostCost are real values here, not undefined — this is the
  * owner looking at their own listing, the one place both are legitimately
- * visible. GET /chargers has no owner.name to derive host/initials from
+ * visible. GET /chargers has no owner name to derive host/initials from
  * (the caller already knows who they are), so the signed-in user's own
- * name is passed in rather than re-fetched. distance/rating/sessions are
+ * identity is passed in rather than re-fetched. distance/rating/sessions are
  * meaningless for a host's own listing (My Chargers never renders any of
  * the three) — present only because Charger requires them.
  */
-export function mapOwnerCharger(oc: OwnerCharger, ownerName: string): MyCharger {
+/** What mapOwnerCharger needs about the signed-in host: their first name (listing-name default) and initials. */
+export interface OwnerIdentity {
+  host: string;
+  initials: string;
+}
+export const ownerIdentityOf = (person: PersonName): OwnerIdentity => ({ host: person.firstName, initials: initialsOf(person) });
+
+export function mapOwnerCharger(oc: OwnerCharger, owner: OwnerIdentity): MyCharger {
   return {
     id: oc.id,
-    host: ownerName,
-    initials: initialsOf(ownerName),
+    host: owner.host,
+    initials: owner.initials,
     postcode: oc.postcode,
     fullAddress: oc.fullAddress ?? undefined,
     listingName: oc.listingName ?? undefined,

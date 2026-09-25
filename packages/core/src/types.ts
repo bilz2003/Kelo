@@ -1,10 +1,10 @@
 export interface Charger {
   id: number;
-  host: string;
-  initials: string;
+  host: string; // the host's FIRST name — only used to build the default listing name
+  initials: string; // from first + last name, see names.ts
   postcode: string;
   fullAddress?: string; // private — only revealed once a booking is confirmed and paid
-  listingName?: string; // host-chosen override; falls back to "{host}'s driveway" when unset
+  listingName?: string; // host-chosen override; falls back to "{host}'s driveway" (host = first name) when unset
   title: string;
   power: string; // display string, e.g. "7.4kW"
   powerNum: number; // numeric kW, for calculations

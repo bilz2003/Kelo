@@ -14,7 +14,7 @@ import { ExtensionRequestEvent } from "@/api/sessions";
 import { getNextBookingForHost, NextHostBooking } from "@/api/bookings";
 import { getChargerStats, ChargerStats } from "@/api/chargers";
 import { ApiError } from "@/api/client";
-import { computeSessionFinancials } from "@kelo/core";
+import { computeSessionFinancials, fullName } from "@kelo/core";
 import { defaultTimeRange, dateLabel, formatTimeOfDay, formatTimeWithDay } from "@kelo/core";
 import { Charger, TimeRangeValue } from "@kelo/core";
 
@@ -194,14 +194,14 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
   useFocusEffect(
     useCallback(() => {
       loadNextBooking();
-      refetchMyChargers(user?.name ?? "");
+      refetchMyChargers(user ?? null);
       hostSessions.refresh();
     }, [loadNextBooking, refetchMyChargers, user, hostSessions.refresh]),
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadNextBooking(), refetchMyChargers(user?.name ?? ""), loadStats(), hostSessions.refresh()]);
+    await Promise.all([loadNextBooking(), refetchMyChargers(user ?? null), loadStats(), hostSessions.refresh()]);
     setRefreshing(false);
   };
 
@@ -224,7 +224,7 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
             <TriangleAlert size={18} color={tokens.danger} style={{ marginBottom: 8 }} />
             <Text style={{ color: tokens.textSoft, fontSize: 13, textAlign: "center", marginBottom: 14 }}>{myChargersError}</Text>
             <Pressable
-              onPress={() => refetchMyChargers(user?.name ?? "")}
+              onPress={() => refetchMyChargers(user ?? null)}
               style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingVertical: 8, paddingHorizontal: 16 }}
             >
               <Text style={{ fontSize: 12.5, fontWeight: "500", color: tokens.text }}>Try again</Text>
@@ -320,7 +320,7 @@ export function MyChargersScreen({ onAdd, onEdit }: { onAdd: () => void; onEdit:
                   {nextBooking.charger.title}
                 </Text>
                 <Text style={{ fontSize: 14, color: tokens.text }}>
-                  {nextBooking.driver.name} · {dateLabel(new Date(nextBooking.arrivalAt))}{" "}
+                  {fullName(nextBooking.driver)} · {dateLabel(new Date(nextBooking.arrivalAt))}{" "}
                   {formatTimeOfDay(new Date(nextBooking.arrivalAt))} – {formatTimeWithDay(new Date(nextBooking.endAt), new Date(nextBooking.arrivalAt))}
                 </Text>
               </View>

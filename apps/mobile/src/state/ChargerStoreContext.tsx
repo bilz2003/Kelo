@@ -1,11 +1,12 @@
 import React, { createContext, useCallback, useContext, useState } from "react";
-import { Charger } from "@kelo/core";
+import { Charger, PersonName } from "@kelo/core";
 import { defaultListingName } from "@/data/mockChargers";
 import {
   getDiscoverChargers,
   mapDiscoverCharger,
   getMyChargers,
   mapOwnerCharger,
+  ownerIdentityOf,
   setChargerAvailability,
   patchCharger,
   deleteCharger,
@@ -35,10 +36,10 @@ interface ChargerStoreValue {
   myChargers: MyCharger[]; // real chargers from GET /chargers (owner-scoped)
   myChargersLoading: boolean;
   myChargersError: string | null;
-  // ownerName: GET /chargers has no owner.name to derive host/initials from
+  // owner: GET /chargers has no owner name to derive host/initials from
   // (the caller already knows who they are) — the caller passes the
-  // signed-in user's own name in, same as AuthContext already exposes it.
-  refetchMyChargers: (ownerName: string) => Promise<void>;
+  // signed-in user in, same as AuthContext already exposes it.
+  refetchMyChargers: (owner: PersonName | null) => Promise<void>;
   toggleChargerAvailability: (id: number) => Promise<void>;
   updateCharger: (id: number, patch: Partial<ChargerWriteFields>) => Promise<void>;
   removeCharger: (id: number) => Promise<void>;
@@ -77,12 +78,13 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   const [myChargers, setMyChargers] = useState<MyCharger[]>([]);
   const [myChargersLoading, setMyChargersLoading] = useState(true);
   const [myChargersError, setMyChargersError] = useState<string | null>(null);
-  const refetchMyChargers = useCallback(async (ownerName: string) => {
+  const refetchMyChargers = useCallback(async (owner: PersonName | null) => {
     setMyChargersLoading(true);
     setMyChargersError(null);
     try {
       const data = await getMyChargers();
-      setMyChargers(data.map((oc) => mapOwnerCharger(oc, ownerName)));
+      const identity = ownerIdentityOf(owner ?? { firstName: "", lastName: "" });
+      setMyChargers(data.map((oc) => mapOwnerCharger(oc, identity)));
     } catch (err) {
       setMyChargersError(err instanceof ApiError ? err.message : "Couldn't load your chargers — check your connection and try again.");
     } finally {
@@ -118,7 +120,7 @@ export function ChargerStoreProvider({ children }: { children: React.ReactNode }
   // caller for the owner's name again just to patch one field.
   const updateCharger = useCallback(async (id: number, patch: Partial<ChargerWriteFields>) => {
     const updated = await patchCharger(id, patch);
-    setMyChargers((prev) => prev.map((c) => (c.id === id ? mapOwnerCharger(updated, c.host) : c)));
+    setMyChargers((prev) => prev.map((c) => (c.id === id ? mapOwnerCharger(updated, { host: c.host, initials: c.initials }) : c)));
   }, []);
 
   const removeCharger = useCallback(async (id: number) => {

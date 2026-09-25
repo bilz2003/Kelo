@@ -14,7 +14,7 @@ import { useAuth } from "@/state/AuthContext";
 import { createCharger, startEnodeLink, resolveEnodeLink, startOcppOnboarding, getOcppConnectionStatus } from "@/api/chargers";
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
-import { CHARGER_MODELS, ROUTE_NOTES } from "@/data/mockChargers";
+import { CHARGER_MODELS, ROUTE_NOTES, defaultListingName } from "@/data/mockChargers";
 import { ChargerModelOption, deriveIdleAndOverstayRates } from "@kelo/core";
 
 // Enode's own real Link redirect — must match EnodeLinkService's fixed
@@ -363,7 +363,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder={user?.name ? `${user.name}'s driveway` : "e.g. Garage charger"}
+          placeholder={user?.firstName ? defaultListingName({ host: user.firstName }) : "e.g. Garage charger"}
           placeholderTextColor={tokens.textSoft}
           maxLength={40}
           style={{ backgroundColor: tokens.surface2, borderWidth: 1, borderColor: tokens.hair, borderRadius: radii.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13.5, color: tokens.text, marginBottom: 8 }}

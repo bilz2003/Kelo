@@ -11,7 +11,7 @@ import { StatusBar } from "expo-status-bar";
 // theme/tokens.ts's fonts object. Everything else loads the new set below.
 import { useFonts as useSpaceGrotesk, SpaceGrotesk_700Bold } from "@expo-google-fonts/space-grotesk";
 import { useFonts as useIBMPlexMono, IBMPlexMono_400Regular } from "@expo-google-fonts/ibm-plex-mono";
-import { useFonts as useBricolageGrotesque, BricolageGrotesque_700Bold } from "@expo-google-fonts/bricolage-grotesque";
+import { useFonts as useArchivo, Archivo_700Bold } from "@expo-google-fonts/archivo";
 import { useFonts as usePublicSans, PublicSans_400Regular, PublicSans_500Medium } from "@expo-google-fonts/public-sans";
 import { useFonts as useJetBrainsMono, JetBrainsMono_400Regular, JetBrainsMono_500Medium } from "@expo-google-fonts/jetbrains-mono";
 
@@ -96,12 +96,12 @@ function AppShell() {
 export default function App() {
   const [spaceGroteskLoaded] = useSpaceGrotesk({ SpaceGrotesk_700Bold });
   const [ibmPlexMonoLoaded] = useIBMPlexMono({ IBMPlexMono_400Regular });
-  const [bricolageGrotesqueLoaded] = useBricolageGrotesque({ BricolageGrotesque_700Bold });
+  const [archivoLoaded] = useArchivo({ Archivo_700Bold });
   const [publicSansLoaded] = usePublicSans({ PublicSans_400Regular, PublicSans_500Medium });
   const [jetBrainsMonoLoaded] = useJetBrainsMono({ JetBrainsMono_400Regular, JetBrainsMono_500Medium });
 
   const fontsReady =
-    spaceGroteskLoaded && ibmPlexMonoLoaded && bricolageGrotesqueLoaded && publicSansLoaded && jetBrainsMonoLoaded;
+    spaceGroteskLoaded && ibmPlexMonoLoaded && archivoLoaded && publicSansLoaded && jetBrainsMonoLoaded;
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsReady) await SplashScreenNative.hideAsync();

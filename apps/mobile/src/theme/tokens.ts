@@ -13,15 +13,17 @@ export { getTokens, FIXED, radii, spacing } from "@kelo/core";
 export type { ThemeMode, ThemeTokens } from "@kelo/core";
 
 // Space Grotesk (display) and IBM Plex Mono (mono) were retired from this
-// object for the 2026-09 font system change — everything reading through
-// `fonts` below now gets the new set. The two deliberate exceptions (the
+// object for the 2026-09 font system change, and the display face moved from
+// Bricolage Grotesque to Archivo shortly after (Google tags Bricolage's
+// character as playful/loud — the wrong fit for this product) — everything
+// reading through `fonts` below gets the current set. The two deliberate exceptions (the
 // BrandMark wordmark and the Splash screen's "verified, metered charging"
 // tagline) were moved to their own hardcoded fontFamily strings instead of
 // being carved out here, specifically so they can never be silently pulled
 // along by a future change to this object — see BrandMark in Controls.tsx
 // and SplashScreen.tsx for those.
 export const fonts = {
-  display: "BricolageGrotesque_700Bold", // headlines, prices, big numbers
+  display: "Archivo_700Bold", // headlines, card titles
   body: "PublicSans_400Regular",
   bodyMedium: "PublicSans_500Medium",
   mono: "JetBrainsMono_400Regular", // reserved for measured figures — kWh, rates, timers

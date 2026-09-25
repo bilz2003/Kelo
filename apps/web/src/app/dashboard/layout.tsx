@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BrandMark } from "@/components/BrandMark";
 import { DashNav, LogoutButton } from "@/components/DashNav";
 import { apiGet } from "@/lib/serverApi";
+import { fullName } from "@kelo/core";
 import type { AuthUser } from "@/lib/types";
 
 export const metadata: Metadata = { title: { default: "Dashboard", template: "%s · Kelo" }, robots: { index: false } };
@@ -14,11 +15,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="dash">
       <aside className="dash-side">
-        <BrandMark href="/dashboard" />
+        <BrandMark variant="dash" href="/dashboard" />
         <DashNav />
         <div className="dash-user">
           <div>
-            <div className="name">{me.name}</div>
+            <div className="name">{fullName(me)}</div>
             <div className="email soft mono">{me.email}</div>
           </div>
           <LogoutButton />

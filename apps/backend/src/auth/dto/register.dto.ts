@@ -1,5 +1,6 @@
 import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 import { CreatedVia } from "@prisma/client";
+import { Transform } from "class-transformer";
 
 export class RegisterDto {
   @IsEmail()
@@ -14,10 +15,20 @@ export class RegisterDto {
   @Matches(/(?=.*[A-Za-z])(?=.*\d)/, { message: "Password must contain at least one letter and one number" })
   password!: string;
 
+  // Given and family name are separate on purpose — each context uses the right
+  // one (first name alone for "{firstName}'s driveway", both for initials and
+  // account views). Trimmed before validation so " " can't pass MinLength(1).
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  name!: string;
+  @MinLength(1, { message: "First name is required" })
+  @MaxLength(50, { message: "First name must be at most 50 characters" })
+  firstName!: string;
+
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @IsString()
+  @MinLength(1, { message: "Last name is required" })
+  @MaxLength(50, { message: "Last name must be at most 50 characters" })
+  lastName!: string;
 
   @IsOptional()
   @IsString()

@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { deriveIdleAndOverstayRates } from "@kelo/core";
+import { defaultListingName, deriveIdleAndOverstayRates } from "@kelo/core";
 import type { OwnerCharger } from "@/lib/types";
 
 interface PhotoItem {
@@ -43,7 +43,7 @@ function MoneyField(props: {
   );
 }
 
-export function EditChargerForm({ charger, ownerName }: { charger: OwnerCharger; ownerName: string }) {
+export function EditChargerForm({ charger, ownerFirstName }: { charger: OwnerCharger; ownerFirstName: string }) {
   const router = useRouter();
   const [saved, setSaved] = useState(charger); // last state the server confirmed
 
@@ -150,7 +150,7 @@ export function EditChargerForm({ charger, ownerName }: { charger: OwnerCharger;
     }
   }
 
-  const defaultName = `${ownerName}'s driveway`;
+  const defaultName = defaultListingName(ownerFirstName);
 
   return (
     <div>
