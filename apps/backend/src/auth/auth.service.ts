@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
@@ -54,6 +55,7 @@ export class AuthService {
     };
   }
 
+  // dto.email is already trimmed + lower-cased by NormalizedEmail (see dto/) — no re-normalising here on purpose.
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
@@ -61,16 +63,26 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phone: dto.phone,
-        createdVia: dto.createdVia,
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          createdVia: dto.createdVia,
+        },
+      });
+    } catch (err) {
+      // Two simultaneous sign-ups for the same address both pass the check above;
+      // the unique index then rejects the second. That's a duplicate, not a server error.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("An account with this email already exists");
+      }
+      throw err;
+    }
 
     return this.issueTokenPair(user);
   }

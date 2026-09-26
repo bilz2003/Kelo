@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeEmail } from "@kelo/core";
 import { backendRequest, errorMessage } from "@/lib/backend";
 import { writeSessionCookies } from "@/lib/cookies";
 import { isSameOrigin } from "@/lib/origin";
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
 
   if (!firstName || !lastName) return NextResponse.json({ message: "Enter your first and last name." }, { status: 400 });
   if (!email || !password) return NextResponse.json({ message: "Enter your email and a password." }, { status: 400 });
-  if (email !== confirmEmail) return NextResponse.json({ message: "Emails don’t match." }, { status: 400 });
+  if (normalizeEmail(email) !== normalizeEmail(confirmEmail ?? "")) return NextResponse.json({ message: "Emails don’t match." }, { status: 400 });
   if (password !== confirmPassword) return NextResponse.json({ message: "Passwords don’t match." }, { status: 400 });
 
   const r = await backendRequest<TokenPair>("/auth/register", {

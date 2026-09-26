@@ -21,7 +21,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await register(email.trim().toLowerCase(), password, firstName.trim(), lastName.trim());
+      await register(email.trim(), password, firstName.trim(), lastName.trim());
     } catch {
       // error already surfaced via useAuth().error
     } finally {

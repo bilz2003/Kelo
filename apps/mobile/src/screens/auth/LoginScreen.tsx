@@ -19,7 +19,7 @@ export function LoginScreen({ onNavigateToRegister }: { onNavigateToRegister: ()
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await login(email.trim().toLowerCase(), password);
+      await login(email.trim(), password); // the backend normalises case/whitespace — see NormalizedEmail
     } catch {
       // error already surfaced via useAuth().error
     } finally {

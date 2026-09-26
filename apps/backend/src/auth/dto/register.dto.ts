@@ -1,9 +1,10 @@
-import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
 import { CreatedVia } from "@prisma/client";
 import { Transform } from "class-transformer";
+import { NormalizedEmail } from "./normalized-email.decorator";
 
 export class RegisterDto {
-  @IsEmail()
+  @NormalizedEmail()
   email!: string;
 
   @IsString()

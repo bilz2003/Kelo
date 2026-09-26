@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { normalizeEmail } from "@kelo/core";
 
 async function post(path: string, body: unknown): Promise<{ ok: boolean; message?: string }> {
   try {
@@ -109,7 +110,7 @@ export function RegisterForm() {
     firstName: !trimmed.first ? "Enter your first name" : null,
     lastName: !trimmed.last ? "Enter your last name" : null,
     email: !trimmed.email ? "Enter your email" : !EMAIL_RE.test(trimmed.email) ? "Enter a valid email address" : null,
-    confirmEmail: !trimmed.confirmEmail ? "Confirm your email" : trimmed.confirmEmail !== trimmed.email ? "Emails don’t match" : null,
+    confirmEmail: !trimmed.confirmEmail ? "Confirm your email" : normalizeEmail(trimmed.confirmEmail) !== normalizeEmail(trimmed.email) ? "Emails don’t match" : null,
     password: passwordProblem(password),
     confirmPassword: !confirmPassword ? "Confirm your password" : confirmPassword !== password ? "Passwords don’t match" : null,
   };

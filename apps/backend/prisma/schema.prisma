@@ -68,6 +68,10 @@ enum ExtensionRequestStatus {
 
 model User {
   id                     Int      @id @default(autoincrement())
+  // Always stored trimmed + lower-cased: the API normalises every email before it
+  // reaches here, and User_email_normalised_check (added by hand in the
+  // normalize_user_email migration — Prisma can't model CHECK constraints) makes
+  // the database refuse anything else, so this @unique is effectively case-insensitive.
   email                  String   @unique
   passwordHash           String
   // Stored separately (was a single `name`) so each context can use the right
