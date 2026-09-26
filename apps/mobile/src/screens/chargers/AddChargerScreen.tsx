@@ -14,8 +14,8 @@ import { useAuth } from "@/state/AuthContext";
 import { createCharger, startEnodeLink, resolveEnodeLink, startOcppOnboarding, getOcppConnectionStatus } from "@/api/chargers";
 import { PhotoDraft } from "@/api/photos";
 import { ApiError } from "@/api/client";
-import { CHARGER_MODELS, ROUTE_NOTES, defaultListingName } from "@/data/mockChargers";
-import { ChargerModelOption, deriveIdleAndOverstayRates } from "@kelo/core";
+import { ROUTE_NOTES, defaultListingName } from "@/data/mockChargers";
+import { ChargerModelOption, deriveIdleAndOverstayRates, getEnabledChargerModels } from "@kelo/core";
 
 // Enode's own real Link redirect — must match EnodeLinkService's fixed
 // REDIRECT_URI on the backend exactly (see that file's own comment on
@@ -246,7 +246,7 @@ export function AddChargerScreen({ onBack, onAdded }: { onBack: () => void; onAd
           contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 4 }}
           style={{ marginHorizontal: -20, marginBottom: model ? 12 : 20 }}
         >
-          {CHARGER_MODELS.filter((m) => m.enabled).map((m) => (
+          {getEnabledChargerModels().map((m) => (
             <Chip key={m.title} active={model?.title === m.title} onPress={() => selectModel(m)}>{m.title}</Chip>
           ))}
         </ScrollView>

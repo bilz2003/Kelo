@@ -12,6 +12,12 @@ export const ENERGY_COMMISSION = 0.12;
 export const IDLE_COMMISSION = 0.12;
 export const OVERSTAY_COMMISSION = 0.3;
 
+// The flat service charge (£) taken from the driver when a booking is
+// confirmed — shown on the booking screen, in the receipt note and on the
+// website's "Chargers & fees" page, all from this one value.
+export const SERVICE_CHARGE = 1.49;
+export const formatServiceCharge = () => `£${SERVICE_CHARGE.toFixed(2)}`;
+
 // Simulated live-session timing (accelerated for demo purposes — see
 // ActiveSessionScreen). Swap these for real elapsed time once wired to an
 // actual OCPP/Enode meter feed.

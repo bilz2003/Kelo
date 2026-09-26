@@ -13,7 +13,7 @@ import { MINIMIZED_BANNER_CLEARANCE } from "@/lib/layout";
 import { DiscoverStackParamList } from "@/navigation/types";
 import { NOW, nextFullHour, startOfDay, dayEndOf, isSameDate, formatTimeOfDay, formatTimeWithDay, formatDuration, dateLabel } from "@kelo/core";
 import { MIN_BOOKING_HOURS, MAX_BOOKING_HOURS } from "@kelo/core";
-import { estimateBookingEnergy } from "@kelo/core";
+import { estimateBookingEnergy, formatServiceCharge } from "@kelo/core";
 import { ensureRealBooking } from "@/api/bookingBridge";
 
 type Props = NativeStackScreenProps<DiscoverStackParamList, "BookingFlow">;
@@ -63,7 +63,7 @@ export function BookingFlowScreen({ route, navigation }: Props) {
   const rows: [string, string][] = [
     ["Est. energy delivered", `~${estKwh} kWh`],
     ["Est. charging cost", `£${estCost}`],
-    ["Service charge", "£1.49"],
+    ["Service charge", formatServiceCharge()],
   ];
 
   return (
@@ -101,7 +101,7 @@ export function BookingFlowScreen({ route, navigation }: Props) {
         <View style={{ flexDirection: "row", gap: 8 }}>
           <Lock size={13} color={tokens.textSoft} style={{ marginTop: 2 }} />
           <Text style={{ flex: 1, fontSize: 11.5, color: tokens.textSoft, lineHeight: 17 }}>
-            £1.49 is charged now. Your actual charging cost is settled after the session, from the charger's own verified meter reading — never an estimate. Free cancellation up to 2 hours before arrival.
+            {formatServiceCharge()} is charged now. Your actual charging cost is settled after the session, from the charger's own verified meter reading — never an estimate. Free cancellation up to 2 hours before arrival.
           </Text>
         </View>
       </ScrollView>

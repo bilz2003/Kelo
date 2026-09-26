@@ -4,3 +4,4 @@ export * from "./dateTime";
 export * from "./tokens";
 export * from "./names";
 export * from "./email";
+export * from "./chargerModels";

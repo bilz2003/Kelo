@@ -132,6 +132,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .home-footer { padding-top: 40px; padding-bottom: 40px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .copyright { font-size: 13px; color: var(--text-soft); }
 
+/* ══ Chargers & fees ════════════════════════════════════════════════════ */
+/* Sections are separated by whitespace and one background tint — no divider lines. */
+.fees-head { padding-top: 72px; padding-bottom: 56px; }
+.fees-h1 { margin: 0 0 20px; font-family: var(--font-display), 'Archivo', system-ui, sans-serif; font-weight: 700; font-size: 44px; line-height: 1.1; letter-spacing: -0.01em; max-width: 720px; }
+.fees-lede { font-size: 17px; line-height: 1.7; color: var(--text-soft); max-width: 620px; }
+.fees-block { padding-top: 56px; padding-bottom: 56px; }
+.fees-tint { padding-bottom: 88px; background: var(--surface); }
+.fees-h2 { margin: 0 0 32px; font-family: var(--font-body), 'Public Sans', system-ui, sans-serif; font-weight: 500; font-size: 26px; color: var(--text); }
+.fees-h2-tight { margin-bottom: 12px; }
+.model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+.model-card { background: var(--surface); border: 1px solid var(--hair); border-radius: 14px; padding: 24px; }
+.model-title { font-family: var(--font-display), 'Archivo', system-ui, sans-serif; font-weight: 700; font-size: 18px; margin-bottom: 6px; }
+.model-route { font-size: 13.5px; color: var(--text-soft); }
+.fees-note { margin-top: 24px; font-size: 14.5px; color: var(--text-soft); }
+.fees-intro { margin-bottom: 24px; font-size: 15px; line-height: 1.6; color: var(--text-soft); max-width: 620px; }
+/* Compact small print by design — the figures are disclosure, not headline numbers. */
+.fee-box { background: var(--ink); border: 1px solid var(--hair); border-radius: 12px; padding: 20px 24px; max-width: 670px; }
+.fee-list { list-style: none; margin: 0; padding: 0; font-size: 12px; line-height: 1.9; color: var(--text-soft); }
+.fee-fig { font-family: var(--font-mono), 'JetBrains Mono', monospace; font-weight: 500; color: var(--cyan-text); }
+.fee-fig-plain { color: var(--text); }
+.fee-foot { margin-top: 20px; font-size: 12px; color: var(--text-soft); max-width: 620px; }
+
 /* Motion is decoration: with prefers-reduced-motion the pulses and travelling dots are switched off. */
 @media (prefers-reduced-motion: reduce) {
   .hub-node { animation: none; }
@@ -160,6 +182,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 @media (max-width: 480px) {
   .hero-h1 { font-size: 34px; }
+  .fees-h1 { font-size: 32px; }
   .hero-p { font-size: 16px; }
   .hero-content-pad { padding: 48px 20px 64px; }
   .pad { padding-left: 20px; padding-right: 20px; }
@@ -169,6 +192,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .est-card { padding: 20px; }
   .section-pad { padding-top: 44px; padding-bottom: 44px; }
   .home-wrap h2 { font-size: 24px; }
+  .fees-head { padding-top: 48px; padding-bottom: 40px; }
+  .fees-block { padding-top: 44px; padding-bottom: 44px; }
+  .fees-tint { padding-bottom: 64px; }
+  .fee-box { padding: 16px 18px; }
   .home-wrap h3 { font-size: 20px; }
 }
 

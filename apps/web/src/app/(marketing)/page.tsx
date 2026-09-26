@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { BrandMark } from "@/components/BrandMark";
 import { EarningsEstimator } from "@/components/EarningsEstimator";
 import { HeroParallax } from "@/components/HeroParallax";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteNav } from "@/components/SiteNav";
 
 // Layout, copy and behaviour follow the finished homepage mockup. Content rules
 // that apply to this page: no testimonials, customer logos or user counts (none
@@ -10,16 +11,7 @@ import { HeroParallax } from "@/components/HeroParallax";
 export default function HomePage() {
   return (
     <div className="home-wrap">
-      {/* Nav */}
-      <div className="pad nav-row">
-        <BrandMark variant="nav" href="/" />
-        <div className="nav-links">
-          <a href="#how-it-works" className="nav-link">How it works</a>
-          <a href="#hosts" className="nav-link">For hosts</a>
-          <Link href="/login" className="nav-link nav-login">Log in</Link>
-          <Link href="/register" className="nav-get-started">Get started</Link>
-        </div>
-      </div>
+      <SiteNav />
 
       {/* Hero */}
       <HeroParallax>
@@ -51,7 +43,7 @@ export default function HomePage() {
             <p className="p-how">The charger reports straight to Kelo the second a session starts. Energy, time, cost — live, and identical for both sides. What you see mid-session is exactly what gets billed.</p>
           </div>
 
-          {/* An illustration of the app's listing card. The model shown must be one the app currently lets a host add (see CHARGER_MODELS in apps/mobile/src/data/mockChargers.ts) — Ohme/Pod Point are deliberately hidden there for now. */}
+          {/* An illustration of the app's listing card. The model shown must be one the app currently lets a host add (see CHARGER_MODELS in packages/core/src/chargerModels.ts) — Ohme/Pod Point are deliberately hidden there for now. */}
           <div className="listing-card" role="img" aria-label="Example charger listing card from the Kelo app">
             <div className="lc-head">
               <div className="lc-avatar">JM</div>
@@ -105,11 +97,7 @@ export default function HomePage() {
         <Link href="/register" className="cta-account">Create your account</Link>
       </div>
 
-      {/* Footer */}
-      <div className="pad home-footer">
-        <BrandMark variant="footer" href={null} />
-        <div className="copyright">© {new Date().getFullYear()} Kelo</div>
-      </div>
+      <SiteFooter />
     </div>
   );
 }

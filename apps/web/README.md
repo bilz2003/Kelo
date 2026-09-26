@@ -8,6 +8,7 @@ Part of the monorepo described in the [root README](../../README.md).
 | Area | Routes |
 |---|---|
 | Marketing (public) | `/` — one page: hero, problem, how it works, drivers/hosts, earnings estimator, one account. (`/hosts` and `/metering` redirect to its `#hosts` / `#how-it-works` sections.) |
+| Marketing (public) | `/chargers-and-fees` — supported chargers and how fees work. Built from live data, nothing typed in: the list is `getEnabledChargerModels()` (`CHARGER_MODELS` in `packages/core/src/chargerModels.ts`, the same list the app's Add Charger picker uses) and every figure is a `packages/core/src/pricing.ts` constant (`ENERGY_COMMISSION`, `IDLE_RATE_MULTIPLIER`, `OVERSTAY_RATE_MULTIPLIER`, `SERVICE_CHARGE`). It's statically rendered, so a change shows up on the next build. |
 | Auth | `/login`, `/register` (First name, Last name, Email, Confirm email, Password, Confirm password) |
 | Dashboard (signed in) | `/dashboard` (My chargers, availability), `/dashboard/chargers/[id]` (edit details + photos, remove), `/dashboard/earnings` |
 

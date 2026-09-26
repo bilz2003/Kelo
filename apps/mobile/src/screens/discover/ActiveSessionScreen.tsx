@@ -9,7 +9,7 @@ import { PulseDot } from "@/components/Controls";
 import { TimeSlotPicker } from "@/components/TimePickers";
 import { useSession } from "@/state/SessionContext";
 import { RootStackParamList } from "@/navigation/types";
-import { computeSessionFinancials, MAX_BOOKING_HOURS, formatTimeWithDay } from "@kelo/core";
+import { computeSessionFinancials, MAX_BOOKING_HOURS, formatTimeWithDay, formatServiceCharge } from "@kelo/core";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActiveSession">;
 
@@ -145,7 +145,7 @@ export function ActiveSessionScreen({ navigation }: Props) {
           </View>
 
           <Text style={{ width: "100%", fontSize: 11.5, color: tokens.textSoft, lineHeight: 17 }}>
-            Verified from {receipt.charger.title}'s own meter — this is exactly what was delivered, never an estimate. The £1.49 service charge was already taken when you booked.
+            Verified from {receipt.charger.title}'s own meter — this is exactly what was delivered, never an estimate. The {formatServiceCharge()} service charge was already taken when you booked.
           </Text>
         </ScrollView>
         <View style={{ padding: 20, paddingBottom: 28, borderTopWidth: 1, borderTopColor: tokens.hair }}>
